@@ -12,11 +12,37 @@ export function SignInForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+  const [needsConfirmation, setNeedsConfirmation] = useState(false)
+  const [resending, setResending] = useState(false)
   const [pending, setPending] = useState(false)
+
+  async function resendConfirmation() {
+    setError('')
+    setInfo('')
+    setResending(true)
+
+    const { error: resendError } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim(),
+      options: {
+        emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/confirm?next=/setup`,
+      },
+    })
+
+    setResending(false)
+    if (resendError) {
+      setError('We could not send a new confirmation email yet. Wait a minute and try again.')
+      return
+    }
+    setInfo('A new confirmation email is on its way. Open the newest link in your inbox.')
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
+    setInfo('')
+    setNeedsConfirmation(false)
     setPending(true)
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -25,6 +51,12 @@ export function SignInForm() {
     })
 
     if (signInError) {
+      if (/not confirmed|confirm your email/i.test(signInError.message)) {
+        setNeedsConfirmation(true)
+        setError('This account still needs email confirmation. Open the link in your inbox, or send yourself a new one.')
+        setPending(false)
+        return
+      }
       setError('We could not sign you in. Check your email and password, then try again.')
       setPending(false)
       return
@@ -94,6 +126,12 @@ export function SignInForm() {
               <input id="password" name="password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
             </div>
             {error && <div className="notice" data-tone="error" role="alert"><CircleAlert />{error}</div>}
+            {info && <div className="notice" role="status">{info}</div>}
+            {needsConfirmation && (
+              <button type="button" className="secondary-button" onClick={() => void resendConfirmation()} disabled={resending || !email.trim()}>
+                {resending ? <LoaderCircle className="animate-spin" /> : null}{resending ? 'Sending…' : 'Resend confirmation email'}
+              </button>
+            )}
             <button className="primary-button auth-submit" type="submit" disabled={pending}>
               {pending ? <LoaderCircle className="animate-spin" /> : null}{pending ? 'Signing in…' : 'Sign in'}{!pending && <ArrowRight />}
             </button>

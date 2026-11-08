@@ -65,7 +65,7 @@ export function SetupForm() {
       email: email.trim(),
       password,
       options: {
-        emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback?next=/setup`,
+        emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/confirm?next=/setup`,
         data: { full_name: fullName.trim() },
       },
     })

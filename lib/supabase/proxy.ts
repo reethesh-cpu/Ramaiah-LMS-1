@@ -43,6 +43,27 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // Supabase falls back to the Site URL (usually "/") when the redirect URL in
+  // an email link is not in the project's allow list. Forward those auth
+  // callbacks to the confirm handler instead of dropping the session on the
+  // marketing page.
+  if (request.nextUrl.pathname === '/') {
+    const search = request.nextUrl.searchParams
+    const looksLikeAuthCallback =
+      search.has('code') ||
+      search.has('error') ||
+      search.has('error_description') ||
+      (search.has('token_hash') && search.has('type'))
+
+    if (looksLikeAuthCallback) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/auth/confirm'
+      const redirect = NextResponse.redirect(url)
+      supabaseResponse.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie))
+      return redirect
+    }
+  }
+
   if (
     // if the user is not logged in and the app path, in this case, /protected, is accessed, redirect to the login page
     request.nextUrl.pathname.startsWith('/protected') &&
