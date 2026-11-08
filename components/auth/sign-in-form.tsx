@@ -1,0 +1,106 @@
+'use client'
+
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { FormEvent, useState } from 'react'
+import { ArrowLeft, ArrowRight, CircleAlert, Layers3, LoaderCircle } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+
+export function SignInForm() {
+  const router = useRouter()
+  const supabase = createClient()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    setPending(true)
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+
+    if (signInError) {
+      setError('We could not sign you in. Check your email and password, then try again.')
+      setPending(false)
+      return
+    }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role_code,is_active')
+      .eq('id', user?.id ?? '')
+      .maybeSingle()
+
+    if (profileError || !profile) {
+      const { data: bootstrapAvailable } = await supabase.rpc('crm_bootstrap_available')
+      if (bootstrapAvailable) {
+        router.replace('/setup')
+      } else {
+        await supabase.auth.signOut()
+        setError('This account is not active in the workspace. Contact your head office administrator.')
+        setPending(false)
+      }
+      return
+    }
+
+    if (!profile.is_active) {
+      await supabase.auth.signOut()
+      setError('This account is not active in the workspace. Contact your head office administrator.')
+      setPending(false)
+      return
+    }
+
+    router.replace(profile.role_code === 'head_office' ? '/admin' : '/workspace')
+    router.refresh()
+  }
+
+  return (
+    <div className="auth-page">
+      <section className="auth-story" aria-label="Northstar CRM">
+        <Link className="brand-lockup" href="/" aria-label="Northstar CRM home">
+          <span className="brand-mark"><Layers3 size={18} /></span>
+          <span className="brand-copy"><span className="brand-name">Northstar</span><span className="brand-caption">LEAD OPERATIONS</span></span>
+        </Link>
+        <div className="auth-story-copy">
+          <div className="kicker" style={{ color: '#a9d8c9' }}>Your team, in sync</div>
+          <h1>Work moves forward when everyone sees the next step.</h1>
+          <p>One secure workspace for lead data, team activity, and decisions that keep work moving.</p>
+          <div className="auth-step-list">
+            <div className="auth-step"><span className="auth-step-icon"><Layers3 /></span>Flexible workbooks for the way you work</div>
+            <div className="auth-step"><span className="auth-step-icon"><ArrowRight /></span>Clear ownership at every handoff</div>
+          </div>
+        </div>
+        <div className="auth-foot">Private workspace · Supabase protected</div>
+      </section>
+      <section className="auth-panel">
+        <div className="auth-card">
+          <Link href="/" className="quiet-button" style={{ marginBottom: 28, paddingLeft: 0 }}><ArrowLeft /> Back to home</Link>
+          <div className="kicker">Welcome back</div>
+          <h2>Sign in to Northstar</h2>
+          <p>Use the email and password provided by your head office administrator.</p>
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <div className="form-field">
+              <label htmlFor="email">Work email</label>
+              <input id="email" name="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} />
+            </div>
+            <div className="form-field">
+              <label htmlFor="password">Password</label>
+              <input id="password" name="password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+            </div>
+            {error && <div className="notice" data-tone="error" role="alert"><CircleAlert />{error}</div>}
+            <button className="primary-button auth-submit" type="submit" disabled={pending}>
+              {pending ? <LoaderCircle className="animate-spin" /> : null}{pending ? 'Signing in…' : 'Sign in'}{!pending && <ArrowRight />}
+            </button>
+          </form>
+          <div className="auth-helper">New organization? <Link href="/setup" style={{ color: '#347765', fontWeight: 650 }}>Set up the first head office account</Link></div>
+        </div>
+      </section>
+    </div>
+  )
+}
