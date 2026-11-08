@@ -29,6 +29,7 @@ begin
 end;
 $$;
 
+drop trigger if exists lead_assignment_completion_outbox on public.lead_assignments;
 create trigger lead_assignment_completion_outbox
   after update of status on public.lead_assignments
   for each row execute function public.queue_assignment_completion();
