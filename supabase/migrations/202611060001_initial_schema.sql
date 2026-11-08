@@ -1,4 +1,4 @@
--- Northstar CRM — complete initial schema
+-- Northstar CRM - complete initial schema
 -- Safe to run more than once in the Supabase SQL Editor.
 
 create extension if not exists pgcrypto;
@@ -143,12 +143,12 @@ create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
 set search_path = ''
-as $$
+as $crm$
 begin
   new.updated_at = now();
   return new;
 end;
-$$;
+$crm$;
 
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
@@ -185,12 +185,12 @@ language sql
 stable
 security definer
 set search_path = ''
-as $$
+as $crm$
   select p.role_code
   from public.profiles p
   where p.id = auth.uid() and p.is_active
   limit 1;
-$$;
+$crm$;
 
 create or replace function public.is_head_office()
 returns boolean
@@ -198,9 +198,9 @@ language sql
 stable
 security definer
 set search_path = ''
-as $$
+as $crm$
   select coalesce(public.current_role_code() = 'head_office', false);
-$$;
+$crm$;
 
 create or replace function public.is_manager_of(target_id uuid)
 returns boolean
@@ -208,7 +208,7 @@ language sql
 stable
 security definer
 set search_path = ''
-as $$
+as $crm$
   with recursive chain as (
     select p.id, p.manager_id, 1 as depth
     from public.profiles p
@@ -223,7 +223,7 @@ as $$
     select 1 from chain
     where chain.id = auth.uid() and chain.id <> target_id
   );
-$$;
+$crm$;
 
 create or replace function public.can_view_assignee(assignee_id uuid)
 returns boolean
@@ -231,11 +231,11 @@ language sql
 stable
 security definer
 set search_path = ''
-as $$
+as $crm$
   select assignee_id = auth.uid()
     or public.is_head_office()
     or public.is_manager_of(assignee_id);
-$$;
+$crm$;
 
 create or replace function public.can_view_assignment(assignment_id uuid)
 returns boolean
@@ -243,14 +243,14 @@ language sql
 stable
 security definer
 set search_path = ''
-as $$
+as $crm$
   select exists (
     select 1
     from public.lead_assignments la
     where la.id = assignment_id
       and public.can_view_assignee(la.assigned_to)
   );
-$$;
+$crm$;
 
 create or replace function public.can_edit_assignment_field(p_assignment_id uuid, p_field_id uuid)
 returns boolean
@@ -258,7 +258,7 @@ language sql
 stable
 security definer
 set search_path = ''
-as $$
+as $crm$
   select exists (
     select 1
     from public.lead_assignments la
@@ -272,7 +272,7 @@ as $$
       and tf.field_kind = 'user'
       and tf.owner_role_code = la.role_code
   );
-$$;
+$crm$;
 
 -- ---------------------------------------------------------------------------
 -- One-time head office bootstrap
@@ -284,18 +284,18 @@ language sql
 stable
 security definer
 set search_path = ''
-as $$
+as $crm$
   select not exists (
     select 1 from public.profiles where role_code = 'head_office'
   );
-$$;
+$crm$;
 
 create or replace function public.bootstrap_head_office(p_full_name text)
 returns void
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $crm$
 declare
   v_uid   uuid := auth.uid();
   v_email text;
@@ -331,7 +331,7 @@ begin
         role_code = 'head_office',
         is_active = true;
 end;
-$$;
+$crm$;
 
 -- ---------------------------------------------------------------------------
 -- Complete an assignment (validates required role fields)
@@ -342,7 +342,7 @@ returns void
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $crm$
 declare
   v_uid        uuid := auth.uid();
   v_assignment public.lead_assignments%rowtype;
@@ -401,7 +401,7 @@ begin
          completed_at = now()
    where id = target_assignment_id;
 end;
-$$;
+$crm$;
 
 -- ---------------------------------------------------------------------------
 -- Completion notification outbox
@@ -412,7 +412,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $crm$
 declare
   assignee_name text;
   workbook_name text;
@@ -431,13 +431,13 @@ begin
     select p.id,
       p.email,
       'Lead assignment completed',
-      'Hello ' || p.full_name || E',\n\n' || coalesce(assignee_name, 'A team member') || ' completed lead #' || coalesce(lead_row::text, '—') || ' in the workbook "' || coalesce(workbook_name, 'a workbook') || '". Sign in to your CRM workspace to review the update.'
+      'Hello ' || p.full_name || E',\n\n' || coalesce(assignee_name, 'A team member') || ' completed lead #' || coalesce(lead_row::text, '-') || ' in the workbook "' || coalesce(workbook_name, 'a workbook') || '". Sign in to your CRM workspace to review the update.'
     from public.profiles p
     where p.role_code = 'head_office' and p.is_active;
   end if;
   return new;
 end;
-$$;
+$crm$;
 
 drop trigger if exists lead_assignment_completion_outbox on public.lead_assignments;
 create trigger lead_assignment_completion_outbox

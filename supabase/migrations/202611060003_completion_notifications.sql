@@ -2,7 +2,7 @@ create or replace function public.queue_assignment_completion()
 returns trigger
 language plpgsql security definer
 set search_path = ''
-as $$
+as $crm$
 declare
   assignee_name text;
   workbook_name text;
@@ -27,7 +27,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$crm$;
 
 drop trigger if exists lead_assignment_completion_outbox on public.lead_assignments;
 create trigger lead_assignment_completion_outbox
