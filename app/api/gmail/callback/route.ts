@@ -11,14 +11,18 @@ export async function GET(request: Request) {
   const state = url.searchParams.get('state') // user ID
   const error = url.searchParams.get('error')
 
-  if (error) return NextResponse.redirect(new URL('/workspace?gmail_error=' + encodeURIComponent(error), url.origin))
-  if (!code || !state) return NextResponse.redirect(new URL('/workspace?gmail_error=missing_code', url.origin))
+  if (error) return NextResponse.redirect(new URL('/workspace/email?gmail_error=' + encodeURIComponent(error), url.origin))
+  if (!code || !state) return NextResponse.redirect(new URL('/workspace/email?gmail_error=missing_code', url.origin))
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   // Verify the state matches the current user to prevent CSRF.
-  if (!user || user.id !== state) return NextResponse.redirect(new URL('/workspace?gmail_error=auth_mismatch', url.origin))
+  if (!user || user.id !== state) return NextResponse.redirect(new URL('/workspace/email?gmail_error=auth_mismatch', url.origin))
+
+  // Determine the redirect target based on the user's role.
+  const { data: profile } = await supabase.from('profiles').select('role_code').eq('id', user.id).maybeSingle()
+  const settingsPath = profile?.role_code === 'head_office' ? '/admin/email' : '/workspace/email'
 
   const origin = url.origin
   const redirectUri = `${origin}/api/gmail/callback`
@@ -32,9 +36,9 @@ export async function GET(request: Request) {
 
     if (updateError) throw new Error('Could not save the Gmail connection to your profile.')
 
-    return NextResponse.redirect(new URL('/workspace?gmail_connected=1', url.origin))
+    return NextResponse.redirect(new URL(`${settingsPath}?gmail_connected=1`, url.origin))
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown error'
-    return NextResponse.redirect(new URL('/workspace?gmail_error=' + encodeURIComponent(msg), url.origin))
+    return NextResponse.redirect(new URL(`${settingsPath}?gmail_error=` + encodeURIComponent(msg), url.origin))
   }
 }

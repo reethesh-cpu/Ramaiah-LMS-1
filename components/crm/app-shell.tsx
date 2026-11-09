@@ -30,6 +30,7 @@ const adminLinks = [
   { href: '/admin/categories', label: 'Categories', icon: Tags },
   { href: '/admin/users', label: 'People & access', icon: Users },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/admin/email', label: 'Email settings', icon: Mail },
 ]
 
 const workspaceLinks = [
