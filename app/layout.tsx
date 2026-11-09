@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   applicationName: 'Ramaiah Capital',
   icons: {
     icon: [{ url: '/logo-icon.png', type: 'image/png', sizes: '512x512' }],
+    shortcut: [{ url: '/favicon.ico', type: 'image/x-icon' }],
     apple: [{ url: '/apple-icon.png', type: 'image/png', sizes: '180x180' }],
   },
 }
