@@ -1,20 +1,27 @@
 'use client'
 
 import Link from 'next/link'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CircleAlert, Layers3, LoaderCircle } from 'lucide-react'
+import { ArrowLeft, CircleAlert, LoaderCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { BrandLockup } from '@/components/brand-lockup'
 
 export function SetupForm() {
   const router = useRouter()
-  const supabase = createClient()
+  // Lazily initialise the Supabase client so it is never called at module
+  // evaluation time (which breaks Next.js static export during build).
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+  function getSupabase() {
+    if (!supabaseRef.current) supabaseRef.current = createClient()
+    return supabaseRef.current
+  }
   const { data: setupStatus, error: setupStatusError, isLoading: checkingSetup } = useSWR('crm-setup-state', async () => {
+    const sb = getSupabase()
     const [{ data: { user } }, { data: available, error }] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase.rpc('crm_bootstrap_available'),
+      sb.auth.getUser(),
+      sb.rpc('crm_bootstrap_available'),
     ])
     if (error) throw error
     return { user, available: Boolean(available) }
@@ -27,7 +34,7 @@ export function SetupForm() {
   const [pending, setPending] = useState(false)
 
   async function finishSetup(name: string) {
-    const { error: bootstrapError } = await supabase.rpc('bootstrap_head_office', { p_full_name: name })
+    const { error: bootstrapError } = await getSupabase().rpc('bootstrap_head_office', { p_full_name: name })
     if (bootstrapError) {
       setError(bootstrapError.message.includes('already complete')
         ? 'Initial setup has already been completed.'
@@ -62,7 +69,7 @@ export function SetupForm() {
       return
     }
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
+    const { data, error: signUpError } = await getSupabase().auth.signUp({
       email: email.trim(),
       password,
       options: {
