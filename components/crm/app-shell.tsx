@@ -53,8 +53,8 @@ export function AppShell({ profile, isAdmin, children }: { profile: Profile; isA
     setPending(true)
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.replace('/sign-in')
-    router.refresh()
+    // Replace the entire history stack with sign-in so back button cannot return to an authenticated page.
+    window.location.replace('/sign-in')
   }
 
   const initials = profile.full_name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()

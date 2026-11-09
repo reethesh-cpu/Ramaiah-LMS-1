@@ -4,17 +4,29 @@ const nextConfig = {
     unoptimized: true,
   },
   async headers() {
-    return [{
-      source: '/:path*',
-      headers: [
-        { key: 'X-Content-Type-Options', value: 'nosniff' },
-        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-        { key: 'Strict-Transport-Security', value: 'max-age=63072000' },
-        { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
-        { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-        { key: 'Content-Security-Policy-Report-Only', value: "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co https://*.supabase.in; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'" },
-      ],
-    }]
+    return [
+      // Authenticated routes: never cache in browser or CDN
+      {
+        source: '/(admin|workspace)/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
+        ],
+      },
+      // Security headers for all routes
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Content-Security-Policy-Report-Only', value: "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co https://*.supabase.in; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'" },
+        ],
+      },
+    ]
   },
 }
 
