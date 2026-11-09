@@ -74,19 +74,21 @@ stable
 security definer
 set search_path = ''
 as $crm$
-  with recursive chain as (
-    select p.id, p.manager_id, 1 as depth
-    from public.profiles p
-    where p.id = target_id
-    union all
-    select p.id, p.manager_id, c.depth + 1
-    from public.profiles p
-    join chain c on p.id = c.manager_id
-    where c.depth < 32
+  with recursive managers as (
+    select pm.manager_id as id, 1 as depth
+    from public.profile_managers pm
+    where pm.profile_id = target_id
+    union
+    select pm.manager_id, m.depth + 1
+    from public.profile_managers pm
+    join managers m on pm.profile_id = m.id
+    where m.depth < 32
   )
   select exists (
-    select 1 from chain
-    where chain.id = auth.uid() and chain.id <> target_id
+    select 1
+    from managers
+    where managers.id = auth.uid()
+      and managers.id <> target_id
   );
 $crm$;
 

@@ -25,6 +25,14 @@ create table if not exists public.profiles (
   updated_at  timestamptz not null default now()
 );
 
+create table if not exists public.profile_managers (
+  profile_id uuid not null references public.profiles (id) on delete cascade,
+  manager_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (profile_id, manager_id),
+  constraint profile_managers_not_self check (profile_id <> manager_id)
+);
+
 create table if not exists public.categories (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
@@ -123,6 +131,7 @@ create unique index if not exists templates_name_category_idx
 
 create index if not exists profiles_role_idx on public.profiles (role_code);
 create index if not exists profiles_manager_idx on public.profiles (manager_id);
+create index if not exists profile_managers_manager_idx on public.profile_managers (manager_id);
 create index if not exists template_fields_template_idx on public.template_fields (template_id, sort_order);
 create index if not exists workbooks_category_idx on public.workbooks (category_id);
 create index if not exists workbooks_template_idx on public.workbooks (template_id);
@@ -209,19 +218,21 @@ stable
 security definer
 set search_path = ''
 as $crm$
-  with recursive chain as (
-    select p.id, p.manager_id, 1 as depth
-    from public.profiles p
-    where p.id = target_id
-    union all
-    select p.id, p.manager_id, c.depth + 1
-    from public.profiles p
-    join chain c on p.id = c.manager_id
-    where c.depth < 32
+  with recursive managers as (
+    select pm.manager_id as id, 1 as depth
+    from public.profile_managers pm
+    where pm.profile_id = target_id
+    union
+    select pm.manager_id, m.depth + 1
+    from public.profile_managers pm
+    join managers m on pm.profile_id = m.id
+    where m.depth < 32
   )
   select exists (
-    select 1 from chain
-    where chain.id = auth.uid() and chain.id <> target_id
+    select 1
+    from managers
+    where managers.id = auth.uid()
+      and managers.id <> target_id
   );
 $crm$;
 
@@ -450,6 +461,7 @@ create trigger lead_assignment_completion_outbox
 
 alter table public.role_definitions        enable row level security;
 alter table public.profiles                enable row level security;
+alter table public.profile_managers        enable row level security;
 alter table public.categories              enable row level security;
 alter table public.templates               enable row level security;
 alter table public.template_fields         enable row level security;
@@ -480,6 +492,15 @@ create policy profiles_insert on public.profiles
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles
   for update to authenticated using (public.is_head_office()) with check (public.is_head_office());
+
+-- profile_managers
+drop policy if exists profile_managers_select on public.profile_managers;
+create policy profile_managers_select on public.profile_managers
+  for select to authenticated using (true);
+
+drop policy if exists profile_managers_write on public.profile_managers;
+create policy profile_managers_write on public.profile_managers
+  for all to authenticated using (public.is_head_office()) with check (public.is_head_office());
 
 -- categories
 drop policy if exists categories_select on public.categories;

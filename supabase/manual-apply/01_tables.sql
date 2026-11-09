@@ -27,6 +27,14 @@ create table if not exists public.profiles (
   updated_at  timestamptz not null default now()
 );
 
+create table if not exists public.profile_managers (
+  profile_id uuid not null references public.profiles (id) on delete cascade,
+  manager_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (profile_id, manager_id),
+  constraint profile_managers_not_self check (profile_id <> manager_id)
+);
+
 create table if not exists public.categories (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
@@ -125,6 +133,7 @@ create unique index if not exists templates_name_category_idx
 
 create index if not exists profiles_role_idx on public.profiles (role_code);
 create index if not exists profiles_manager_idx on public.profiles (manager_id);
+create index if not exists profile_managers_manager_idx on public.profile_managers (manager_id);
 create index if not exists template_fields_template_idx on public.template_fields (template_id, sort_order);
 create index if not exists workbooks_category_idx on public.workbooks (category_id);
 create index if not exists workbooks_template_idx on public.workbooks (template_id);

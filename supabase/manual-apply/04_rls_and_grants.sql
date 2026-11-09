@@ -6,6 +6,7 @@
 
 alter table public.role_definitions        enable row level security;
 alter table public.profiles                enable row level security;
+alter table public.profile_managers        enable row level security;
 alter table public.categories              enable row level security;
 alter table public.templates               enable row level security;
 alter table public.template_fields         enable row level security;
@@ -36,6 +37,15 @@ create policy profiles_insert on public.profiles
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles
   for update to authenticated using (public.is_head_office()) with check (public.is_head_office());
+
+-- profile_managers
+drop policy if exists profile_managers_select on public.profile_managers;
+create policy profile_managers_select on public.profile_managers
+  for select to authenticated using (true);
+
+drop policy if exists profile_managers_write on public.profile_managers;
+create policy profile_managers_write on public.profile_managers
+  for all to authenticated using (public.is_head_office()) with check (public.is_head_office());
 
 -- categories
 drop policy if exists categories_select on public.categories;
