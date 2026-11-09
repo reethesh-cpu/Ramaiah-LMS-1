@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { ArrowRight, Check, FileSpreadsheet, FolderKanban, LoaderCircle, Mail, Search, Send, UsersRound } from 'lucide-react'
+import { ArrowRight, Check, FileSpreadsheet, FolderKanban, LoaderCircle, Search, Send, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 type WorkbookRef = { id: string; name: string; status: string; template_id: string }
@@ -36,9 +36,6 @@ type WorkbookGroup = { workbook: WorkbookRef; leadIds: Set<string>; myOpen: numb
 export default function WorkspacePage() {
   const { data, error, isLoading } = useSWR('team-workbook-list', loadList)
   const [search, setSearch] = useState('')
-  const [gmailStatus, setGmailStatus] = useState<{ configured: boolean; connected: boolean; allowEmailSending: boolean } | null>(null)
-  const [gmailBusy, setGmailBusy] = useState(false)
-  const [gmailNotice, setGmailNotice] = useState('')
   const roleLabels = useMemo(() => new Map((data?.roles ?? []).map((role) => [role.role_code, role.label])), [data?.roles])
   const templateNames = useMemo(() => new Map((data?.templates ?? []).map((template) => [template.id, template.name])), [data?.templates])
 
@@ -68,31 +65,6 @@ export default function WorkspacePage() {
   const myOpen = workbookGroups.reduce((total, group) => total + group.myOpen, 0)
   const myCompleted = workbookGroups.reduce((total, group) => total + group.myCompleted, 0)
 
-  useEffect(() => {
-    fetch('/api/gmail/status').then((r) => r.json()).then(setGmailStatus).catch(() => {})
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('gmail_connected')) setGmailNotice('Gmail connected. You can now allow sending on your behalf.')
-    if (params.get('gmail_error')) setGmailNotice('Gmail connection failed: ' + params.get('gmail_error'))
-  }, [])
-
-  async function connectGmail() {
-    setGmailBusy(true)
-    const res = await fetch('/api/gmail/auth')
-    const data = await res.json()
-    if (data.authUrl) window.location.href = data.authUrl
-    else setGmailNotice(data.error ?? 'Could not start Gmail connection.')
-    setGmailBusy(false)
-  }
-
-  async function toggleAllowSending() {
-    if (!gmailStatus) return
-    setGmailBusy(true)
-    const newValue = !gmailStatus.allowEmailSending
-    await fetch('/api/gmail/status', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allow_email_sending: newValue }) })
-    setGmailStatus((s) => s ? { ...s, allowEmailSending: newValue } : s)
-    setGmailBusy(false)
-  }
-
   if (isLoading) return <div className="empty-state"><LoaderCircle className="animate-spin" /></div>
   if (error || !data) return <div className="notice" data-tone="error" role="alert">{error?.message ?? 'Your workbooks could not be loaded.'}</div>
 
@@ -103,7 +75,6 @@ export default function WorkspacePage() {
       <div className="toolbar-row"><div><h2 style={{ margin: 0 }}>Assigned workbooks</h2><span className="form-hint">Each workbook keeps its own columns, so templates never mix.</span></div><div style={{ position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 11, top: 10, color: '#8a8083' }} /><input className="toolbar-search" style={{ paddingLeft: 34 }} aria-label="Search workbooks" placeholder="Search workbooks" value={search} onChange={(event) => setSearch(event.target.value)} /></div></div>
       {!workbookGroups.length ? <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>No workbooks assigned yet</h3><p>When a workbook is assigned to you or your reporting line, it will appear here with an Open button.</p></div> : !visibleGroups.length ? <div className="empty-state"><h3>No matching workbooks</h3><p>Try a different search term.</p></div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Workbook</th><th>Status</th><th>Visible leads</th><th>My open</th><th>My completed</th><th>Team</th><th>Action</th></tr></thead><tbody>{visibleGroups.map((group) => <tr key={group.workbook.id}><td><strong style={{ display: 'block', minWidth: 180 }}>{group.workbook.name}</strong><span className="form-hint">{templateNames.get(group.workbook.template_id) ?? 'Workbook template'}</span></td><td><span className="status-pill" data-tone={group.workbook.status === 'closed' ? 'neutral' : group.workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{group.workbook.status}</span></td><td>{group.leadIds.size}</td><td>{group.myOpen}</td><td>{group.myCompleted}</td><td style={{ whiteSpace: 'normal', maxWidth: 220 }}>{[...group.roles].map((role) => roleLabels.get(role) ?? role).join(', ')}<span className="form-hint" style={{ display: 'block' }}>{group.team.size} {group.team.size === 1 ? 'person' : 'people'}</span></td><td><Link className="primary-button" href={`/workspace/${group.workbook.id}`}><ArrowRight /> Open</Link></td></tr>)}</tbody></table></div>}
     </section>
-    {gmailStatus && <section className="card section-card" style={{ marginTop: 16 }}><div className="section-head"><div><h2>Email settings</h2><p>Connect your Gmail so the CRM can send notifications on your behalf.</p></div><span className="status-pill" data-tone={gmailStatus.connected ? undefined : 'neutral'}><span className="status-dot" />{gmailStatus.connected ? 'Connected' : 'Not connected'}</span></div><div style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>{!gmailStatus.configured ? <span className="form-hint">Gmail is not configured yet. Ask the admin to add Google Mail API credentials in .env.local.</span> : !gmailStatus.connected ? <button className="primary-button" onClick={connectGmail} disabled={gmailBusy}>{gmailBusy ? <LoaderCircle className="animate-spin" /> : <Mail />} Connect Gmail</button> : <><label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}><input type="checkbox" checked={gmailStatus.allowEmailSending} onChange={toggleAllowSending} disabled={gmailBusy} /><span style={{ fontWeight: 600, fontSize: 13 }}>Allow sending emails on my behalf</span></label><button className="secondary-button" onClick={connectGmail} disabled={gmailBusy}>Reconnect</button></>}</div>{gmailNotice && <div className="notice" style={{ margin: '0 16px 16px' }}>{gmailNotice}</div>}</section>}
     {data.profile.manager_id && <div className="notice"><Check /> Work you update is shared with your reporting line. Uploaded source data stays read-only.</div>}
   </>
 }

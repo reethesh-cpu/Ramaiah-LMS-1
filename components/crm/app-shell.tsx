@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Layers3,
   LogOut,
+  Mail,
   Tags,
   Users,
 } from 'lucide-react'
@@ -33,10 +34,11 @@ const adminLinks = [
 
 const workspaceLinks = [
   { href: '/workspace', label: 'My workspace', icon: ClipboardCheck },
+  { href: '/workspace/email', label: 'Email settings', icon: Mail },
 ]
 
 function titleForPath(pathname: string, isAdmin: boolean) {
-  if (!isAdmin) return 'My workspace'
+  if (!isAdmin) return workspaceLinks.find((item) => item.href === pathname)?.label ?? 'My workspace'
   return adminLinks.find((item) => item.href === pathname)?.label ?? 'Workbook'
 }
 
