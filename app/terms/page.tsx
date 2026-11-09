@@ -14,8 +14,10 @@ export default function TermsPage() {
   return (
     <main className="legal-page">
       <header className="hero-nav">
-        <BrandLockup />
-        <Link className="secondary-button" href="/sign-in">Sign in <ArrowUpRight /></Link>
+        <div className="hero-nav-inner">
+          <BrandLockup />
+          <Link className="secondary-button" href="/sign-in">Sign in <ArrowUpRight /></Link>
+        </div>
       </header>
       <article className="legal-shell">
         <div className="legal-head">
