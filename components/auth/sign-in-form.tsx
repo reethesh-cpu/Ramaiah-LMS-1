@@ -2,14 +2,18 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FormEvent, useState } from 'react'
+import { FormEvent, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, CircleAlert, Layers3, LoaderCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { BrandLockup } from '@/components/brand-lockup'
 
 export function SignInForm() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+  function getSupabase() {
+    if (!supabaseRef.current) supabaseRef.current = createClient()
+    return supabaseRef.current
+  }
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -23,7 +27,7 @@ export function SignInForm() {
     setInfo('')
     setResending(true)
 
-    const { error: resendError } = await supabase.auth.resend({
+    const { error: resendError } = await getSupabase().auth.resend({
       type: 'signup',
       email: email.trim(),
       options: {
@@ -46,7 +50,7 @@ export function SignInForm() {
     setNeedsConfirmation(false)
     setPending(true)
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { error: signInError } = await getSupabase().auth.signInWithPassword({
       email: email.trim(),
       password,
     })
@@ -63,19 +67,19 @@ export function SignInForm() {
       return
     }
 
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: profile, error: profileError } = await supabase
+    const { data: { user } } = await getSupabase().auth.getUser()
+    const { data: profile, error: profileError } = await getSupabase()
       .from('profiles')
       .select('role_code,is_active')
       .eq('id', user?.id ?? '')
       .maybeSingle()
 
     if (profileError || !profile) {
-      const { data: bootstrapAvailable } = await supabase.rpc('crm_bootstrap_available')
+      const { data: bootstrapAvailable } = await getSupabase().rpc('crm_bootstrap_available')
       if (bootstrapAvailable) {
         router.replace('/setup')
       } else {
-        await supabase.auth.signOut()
+        await getSupabase().auth.signOut()
         setError('This account is not active in the workspace. Contact your head office administrator.')
         setPending(false)
       }
@@ -83,7 +87,7 @@ export function SignInForm() {
     }
 
     if (!profile.is_active) {
-      await supabase.auth.signOut()
+      await getSupabase().auth.signOut()
       setError('This account is not active in the workspace. Contact your head office administrator.')
       setPending(false)
       return

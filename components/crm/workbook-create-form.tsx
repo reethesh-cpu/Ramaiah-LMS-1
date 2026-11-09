@@ -113,7 +113,7 @@ export function WorkbookCreateForm() {
     if (rows.some((row) => requiredSourceFields.some((field) => row[field.field_key] === null || String(row[field.field_key] ?? '').trim() === ''))) {
       setFormError('Some rows have blank values in required columns. Correct the file and upload it again.'); setPending(false); return
     }
-    const response = await fetch('/api/workbooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: String(form.get('name')).trim(), category_id: categoryId, template_id: selectedTemplateId, status: form.get('status'), rows, assignee_ids: assigneeIds }) })
+  const response = await fetch('/api/workbooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: String(form.get('name')).trim(), category_id: categoryId, template_id: selectedTemplateId, status: form.get('status'), rows, assignee_ids: assigneeIds }) })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) { setFormError(result.error ?? 'The workbook could not be saved.'); setPending(false); return }
     router.push(`/admin/workbooks/${result.workbook_id}`)

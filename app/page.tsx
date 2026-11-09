@@ -45,6 +45,7 @@ export default function HomePage() {
         <span>A focused operations workspace for growing teams.</span>
         <nav className="hero-footer-links" aria-label="Footer">
           <Link href="/terms">Terms &amp; Conditions</Link>
+          <Link href="/privacy">Privacy Policy</Link>
           <a href="https://ramaiahcapital.com" target="_blank" rel="noreferrer">ramaiahcapital.com <ArrowUpRight aria-hidden="true" /></a>
         </nav>
       </footer>
