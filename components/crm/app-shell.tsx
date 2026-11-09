@@ -10,6 +10,7 @@ import {
   Columns3,
   Files,
   FolderKanban,
+  KeyRound,
   LayoutDashboard,
   Layers3,
   LogOut,
@@ -31,11 +32,13 @@ const adminLinks = [
   { href: '/admin/users', label: 'People & access', icon: Users },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
   { href: '/admin/email', label: 'Email settings', icon: Mail },
+  { href: '/admin/password', label: 'Change password', icon: KeyRound },
 ]
 
 const workspaceLinks = [
   { href: '/workspace', label: 'My workspace', icon: ClipboardCheck },
   { href: '/workspace/email', label: 'Email settings', icon: Mail },
+  { href: '/workspace/password', label: 'Change password', icon: KeyRound },
 ]
 
 function titleForPath(pathname: string, isAdmin: boolean) {
