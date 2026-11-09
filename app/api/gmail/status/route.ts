@@ -10,13 +10,14 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('gmail_refresh_token,allow_email_sending')
+    .select('email,gmail_refresh_token,allow_email_sending')
     .eq('id', user.id)
     .maybeSingle()
 
   return NextResponse.json({
     configured: isGmailConfigured(),
     connected: Boolean(profile?.gmail_refresh_token),
+    connectedEmail: profile?.gmail_refresh_token ? (profile.email ?? null) : null,
     allowEmailSending: profile?.allow_email_sending ?? false,
   })
 }
@@ -37,4 +38,19 @@ export async function PATCH(request: Request) {
 
   if (error) return NextResponse.json({ error: 'Could not update the setting.' }, { status: 500 })
   return NextResponse.json({ allowEmailSending: body.allow_email_sending })
+}
+
+// DELETE /api/gmail/status — disconnect Gmail by clearing the refresh token.
+export async function DELETE() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ gmail_refresh_token: null, allow_email_sending: false })
+    .eq('id', user.id)
+
+  if (error) return NextResponse.json({ error: 'Could not disconnect Gmail.' }, { status: 500 })
+  return NextResponse.json({ disconnected: true })
 }
