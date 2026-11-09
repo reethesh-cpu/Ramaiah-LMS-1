@@ -30,7 +30,7 @@ export function generateAuthUrl(redirectUri: string, state: string) {
   return `${AUTH_URL}?${params.toString()}`
 }
 
-export async function exchangeCodeForTokens(code: string, redirectUri: string) {
+export async function exchangeCodeForTokens(code: string, redirectUri: string): Promise<{ refreshToken: string; gmailAddress: string | null }> {
   const creds = getGmailCredentials()
   if (!creds) throw new Error('Gmail OAuth is not configured.')
   const response = await fetch(TOKEN_URL, {
@@ -51,7 +51,23 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string) {
   }
   const data = await response.json() as { refresh_token?: string; access_token?: string }
   if (!data.refresh_token) throw new Error('Google did not return a refresh token. Revoke access in your Google account settings and try again.')
-  return data.refresh_token
+
+  // Fetch the Gmail address that was actually authorised.
+  let gmailAddress: string | null = null
+  if (data.access_token) {
+    try {
+      const infoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+        cache: 'no-store',
+      })
+      if (infoRes.ok) {
+        const info = await infoRes.json() as { email?: string }
+        gmailAddress = info.email ?? null
+      }
+    } catch { /* non-fatal: address is cosmetic */ }
+  }
+
+  return { refreshToken: data.refresh_token, gmailAddress }
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<string> {

@@ -28,10 +28,10 @@ export async function GET(request: Request) {
   const redirectUri = `${origin}/api/gmail/callback`
 
   try {
-    const refreshToken = await exchangeCodeForTokens(code, redirectUri)
+    const { refreshToken, gmailAddress } = await exchangeCodeForTokens(code, redirectUri)
     const { error: updateError } = await supabase
       .from('profiles')
-      .update({ gmail_refresh_token: refreshToken })
+      .update({ gmail_refresh_token: refreshToken, gmail_connected_email: gmailAddress })
       .eq('id', user.id)
 
     if (updateError) throw new Error('Could not save the Gmail connection to your profile.')

@@ -10,14 +10,14 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('email,gmail_refresh_token,allow_email_sending')
+    .select('gmail_refresh_token,gmail_connected_email,allow_email_sending')
     .eq('id', user.id)
     .maybeSingle()
 
   return NextResponse.json({
     configured: isGmailConfigured(),
     connected: Boolean(profile?.gmail_refresh_token),
-    connectedEmail: profile?.gmail_refresh_token ? (profile.email ?? null) : null,
+    connectedEmail: profile?.gmail_refresh_token ? (profile.gmail_connected_email ?? null) : null,
     allowEmailSending: profile?.allow_email_sending ?? false,
   })
 }
@@ -48,7 +48,7 @@ export async function DELETE() {
 
   const { error } = await supabase
     .from('profiles')
-    .update({ gmail_refresh_token: null, allow_email_sending: false })
+    .update({ gmail_refresh_token: null, gmail_connected_email: null, allow_email_sending: false })
     .eq('id', user.id)
 
   if (error) return NextResponse.json({ error: 'Could not disconnect Gmail.' }, { status: 500 })
