@@ -60,7 +60,7 @@ as $crm$
     join public.template_fields tf on tf.id = p_field_id
     where la.id = p_assignment_id
       and la.assigned_to = auth.uid()
-      and la.status = 'assigned'
+      and la.status in ('assigned', 'completed')
       and tf.template_id = w.template_id
       and tf.field_kind = 'user'
       and (

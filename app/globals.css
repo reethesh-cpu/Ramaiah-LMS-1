@@ -100,11 +100,17 @@ button { cursor: pointer; }
 .section-head h2 { margin: 0; font-size: 14px; font-weight: 650; }
 .section-head p { margin: 5px 0 0; color: var(--muted-foreground); font-size: 12px; }
 .table-wrap { overflow: auto; }
-.data-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
-.data-table th { padding: 11px 18px; border-bottom: 1px solid var(--border); color: #857c7f; background: #fdf9fa; font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
-.data-table td { padding: 14px 18px; border-bottom: 1px solid #f2edee; color: #3d3a3c; font-size: 12px; vertical-align: middle; }
-.data-table tr:last-child td { border-bottom: 0; }
-.data-table tbody tr:hover { background: #fffafb; }
+.data-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; font-size: 12px; }
+.data-table th { padding: 7px 10px; border: 1px solid #d4cbcd; color: #fff; background: #c8102e; font-size: 11px; font-weight: 600; }
+.data-table td { padding: 4px 8px; border: 1px solid #ece6e8; color: #3d3a3c; font-size: 12px; vertical-align: middle; background: #fff; }
+.data-table tbody tr:nth-child(even) td { background: #faf8f9; }
+.data-table tbody tr:hover td { background: #fff5f6; }
+.data-table input, .data-table select, .data-table textarea { width: 100%; min-width: 80px; border: 1px solid #ddd6d7; border-radius: 4px; padding: 4px 6px; background: #fff; font-size: 12px; color: #3d3a3c; box-sizing: border-box; }
+.data-table input:hover, .data-table select:hover, .data-table textarea:hover { border-color: #bfb6b8; }
+.data-table input:focus, .data-table select:focus, .data-table textarea:focus { border-color: #c8102e; outline: none; box-shadow: 0 0 0 2px rgba(200,16,46,.1); }
+.data-table input:disabled, .data-table select:disabled { background: #f7f4f5; color: #857c7f; }
+.data-table select { cursor: pointer; }
+.data-table textarea { resize: vertical; min-height: 32px; white-space: pre-wrap; }
 .primary-button, .secondary-button, .quiet-button, .danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid transparent; border-radius: 9px; font-size: 12px; font-weight: 650; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
 .primary-button { background: #c8102e; color: #fff; }
 .primary-button:hover { background: #a60d26; }

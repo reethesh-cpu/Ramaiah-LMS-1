@@ -84,6 +84,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'The workbook could not be assigned. No partial workbook was kept.' }, { status: 500 })
       }
     }
+    // Queue email notifications for each assignee.
+    const { data: notifProfiles } = await admin.from('profiles').select('id,email,full_name').in('id', assigneeIds).eq('is_active', true)
+    if (notifProfiles?.length) {
+      await admin.from('notification_outbox').insert(notifProfiles.map((p) => ({
+        recipient_id: p.id,
+        recipient_email: p.email,
+        subject: `New leads assigned in "${name}"`,
+        body: `Hello ${p.full_name},\n\nYou have been assigned ${leadIds.length} leads in the workbook "${name}". Sign in to your CRM workspace to review and work on them.`,
+        sender_id: actor.user.id,
+      })))
+    }
   }
 
   return NextResponse.json({ workbook_id: workbook.id, lead_count: leadIds.length, assigned_to: assigneeIds.length }, { status: 201 })

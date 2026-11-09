@@ -48,5 +48,21 @@ export async function POST(request: Request) {
     assignedCount += (data ?? []).length
   }
 
+  // Queue email notifications for newly assigned leads.
+  if (assignedCount > 0) {
+    const { data: notifProfiles } = await admin.from('profiles').select('id,email,full_name').in('id', assigneeIds).eq('is_active', true)
+    if (notifProfiles?.length) {
+      const { data: wbRow } = await admin.from('lead_records').select('workbooks(name)').eq('id', leadIds[0]).maybeSingle()
+      const wbName = (wbRow as { workbooks?: { name?: string } } | null)?.workbooks?.name ?? 'a workbook'
+      await admin.from('notification_outbox').insert(notifProfiles.map((p) => ({
+        recipient_id: p.id,
+        recipient_email: p.email,
+        subject: `New leads assigned in "${wbName}"`,
+        body: `Hello ${p.full_name},\n\nYou have been assigned leads in the workbook "${wbName}". Sign in to your CRM workspace to review and work on them.`,
+        sender_id: actor.user.id,
+      })))
+    }
+  }
+
   return NextResponse.json({ assigned_count: assignedCount, skipped_count: rows.length - assignedCount }, { status: 201 })
 }
