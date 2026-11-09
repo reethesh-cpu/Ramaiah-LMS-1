@@ -3,6 +3,49 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getHeadOfficeActor } from '@/lib/crm/server-auth'
 
 const CHUNK = 400
+const LMS_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://ramaiahlms.vercel.app'
+
+function buildHtmlEmail(recipientName: string, workbookName: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+        <!-- Header -->
+        <tr><td style="background:#c8102e;padding:24px 32px;">
+          <div style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:.5px;">Ramaiah Capital LMS</div>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 8px;font-size:16px;color:#111;">Hello <strong>${recipientName}</strong>,</p>
+          <p style="margin:0 0 24px;font-size:14px;color:#444;line-height:1.6;">
+            You have leads waiting for your action in the workbook
+            <strong style="color:#c8102e;">${workbookName}</strong>.
+            Please open your workspace, review your assigned leads, and update the required columns.
+          </p>
+          <!-- CTA button -->
+          <table cellpadding="0" cellspacing="0"><tr><td style="border-radius:6px;background:#c8102e;">
+            <a href="${LMS_URL}/workspace" target="_blank"
+               style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px;">
+              Open LMS Workspace
+            </a>
+          </td></tr></table>
+          <p style="margin:24px 0 0;font-size:12px;color:#888;">
+            This notification was sent from the Ramaiah Capital CRM. If you did not expect this, please contact your administrator.
+          </p>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="background:#f4f4f5;padding:16px 32px;font-size:11px;color:#aaa;text-align:center;">
+          © Ramaiah Capital &nbsp;·&nbsp; <a href="${LMS_URL}" style="color:#c8102e;text-decoration:none;">ramaiahlms.vercel.app</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+}
 
 // POST /api/notifications/notify
 // Creates notification entries for every assignee in a workbook.
@@ -43,8 +86,8 @@ export async function POST(request: Request) {
   const rows = recipients.map((r) => ({
     recipient_id: r.id,
     recipient_email: r.email,
-    subject: `Action needed: "${workbook.name}" leads assigned to you`,
-    body: `Hello ${r.full_name},\n\nYou have leads waiting in the workbook "${workbook.name}". Sign in to your CRM workspace to review and update your columns.\n\nThis is a reminder sent from the Ramaiah Capital CRM.`,
+    subject: `Action needed: "${workbook.name}" has leads waiting for you`,
+    body: buildHtmlEmail(r.full_name, workbook.name),
     sender_id: actor.user!.id,
   }))
 
