@@ -1,0 +1,21 @@
+name: Keep Supabase alive
+
+on:
+  schedule:
+    # 3:30 AM UTC = 9:00 AM IST, every day
+    - cron: '30 3 * * *'
+  workflow_dispatch: # allow manual trigger from GitHub Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Vercel app to keep Supabase active
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://ramaiahlms.vercel.app/api/gmail/status)
+          echo "Response status: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 600 ]; then
+            echo "Supabase ping OK"
+          else
+            echo "Supabase ping FAILED" && exit 1
+          fi
