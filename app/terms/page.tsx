@@ -104,6 +104,7 @@ export default function TermsPage() {
         <span>© {new Date().getFullYear()} Ramaiah Capital. All rights reserved.</span>
         <nav className="hero-footer-links" aria-label="Footer">
           <Link href="/">Home</Link>
+          <Link href="/privacy">Privacy Policy</Link>
           <a href="https://ramaiahcapital.com" target="_blank" rel="noreferrer">ramaiahcapital.com <ArrowUpRight aria-hidden="true" /></a>
         </nav>
       </footer>
