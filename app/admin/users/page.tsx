@@ -35,13 +35,14 @@ export default function UsersPage() {
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true); setFormError(''); setNotice('')
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     const response = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       full_name: form.get('full_name'), email: form.get('email'), password: form.get('password'), role_code: form.get('role_code'), manager_id: form.get('manager_id') || null,
     }) })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) setFormError(result.error ?? 'The user could not be created.')
-    else { setNotice('User created. Share the temporary sign-in details securely.'); event.currentTarget.reset(); setShowCreate(false); await mutate() }
+    else { setNotice('User created. Share the temporary sign-in details securely.'); formElement.reset(); setShowCreate(false); await mutate() }
     setSaving(false)
   }
 
@@ -55,11 +56,12 @@ export default function UsersPage() {
 
   async function resetPassword(event: FormEvent<HTMLFormElement>, personId: string) {
     event.preventDefault(); setSaving(true); setFormError(''); setNotice('')
-    const password = new FormData(event.currentTarget).get('password')
+    const formElement = event.currentTarget
+    const password = new FormData(formElement).get('password')
     const response = await fetch(`/api/users/${personId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) setFormError(result.error ?? 'The password could not be reset.')
-    else { setNotice('Password reset. Share it securely with the user.'); setResetFor(''); event.currentTarget.reset() }
+    else { setNotice('Password reset. Share it securely with the user.'); setResetFor(''); formElement.reset() }
     setSaving(false)
   }
 

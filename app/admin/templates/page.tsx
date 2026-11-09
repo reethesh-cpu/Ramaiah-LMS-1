@@ -53,7 +53,8 @@ export default function TemplatesPage() {
 
   async function addField(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setFormError(''); setMessage('')
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     const label = String(form.get('label') ?? '').trim()
     const fieldKey = keyFromLabel(label)
     const kind = String(form.get('field_kind')) as 'source' | 'user'
@@ -65,7 +66,7 @@ export default function TemplatesPage() {
     if (inputType === 'dropdown' && !options.length) { setFormError('Add at least one dropdown option.'); setSaving(false); return }
     const { error: insertError } = await supabase.from('template_fields').insert({ template_id: currentId, field_key: fieldKey, label, field_kind: kind, owner_role_code: kind === 'user' ? roleCode : null, input_type: inputType, options, is_required: form.get('is_required') === 'on', sort_order: fields.length })
     if (insertError) setFormError('Field could not be added. Field keys must be unique in this template.')
-    else { setMessage('Field added to the template.'); event.currentTarget.reset(); setShowField(false); await mutate() }
+    else { setMessage('Field added to the template.'); formElement.reset(); setShowField(false); await mutate() }
     setSaving(false)
   }
 

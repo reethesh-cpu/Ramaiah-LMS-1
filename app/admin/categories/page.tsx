@@ -23,11 +23,12 @@ export default function CategoriesPage() {
 
   async function createCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setPending(true); setMessage(''); setFormError('')
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     const { data: { user } } = await supabase.auth.getUser()
     const { error: insertError } = await supabase.from('categories').insert({ name: String(form.get('name')).trim(), description: String(form.get('description') ?? '').trim() || null, created_by: user?.id })
     if (insertError) setFormError('Category could not be created. Category names must be unique.')
-    else { setMessage('Category added. It is available to the workbook uploader.'); event.currentTarget.reset(); setOpen(false); await mutate() }
+    else { setMessage('Category added. It is available to the workbook uploader.'); formElement.reset(); setOpen(false); await mutate() }
     setPending(false)
   }
 
