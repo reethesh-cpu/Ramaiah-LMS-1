@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CircleAlert, Layers3, LoaderCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { BrandLockup } from '@/components/brand-lockup'
 
 export function SetupForm() {
   const router = useRouter()
@@ -86,13 +87,10 @@ export function SetupForm() {
 
   return (
     <div className="auth-page">
-      <section className="auth-story" aria-label="Northstar CRM setup">
-        <Link className="brand-lockup" href="/" aria-label="Northstar CRM home">
-          <span className="brand-mark"><Layers3 size={18} /></span>
-          <span className="brand-copy"><span className="brand-name">Northstar</span><span className="brand-caption">LEAD OPERATIONS</span></span>
-        </Link>
+      <section className="auth-story" aria-label="Ramaiah Capital setup">
+        <BrandLockup />
         <div className="auth-story-copy">
-          <div className="kicker" style={{ color: '#a9d8c9' }}>One-time organization setup</div>
+          <div className="kicker" style={{ color: '#ffd9dd' }}>One-time organization setup</div>
           <h1>Start with a secure head office account.</h1>
           <p>The first verified account becomes the workspace owner. From there, head office can create roles, users, categories, and workbook templates.</p>
         </div>
@@ -124,7 +122,7 @@ export function SetupForm() {
               </button>
             </form>
           )}
-          <div className="auth-helper">Already have an account? <Link href="/sign-in" style={{ color: '#347765', fontWeight: 650 }}>Sign in</Link></div>
+          <div className="auth-helper">Already have an account? <Link href="/sign-in" style={{ color: '#c8102e', fontWeight: 650 }}>Sign in</Link></div>
         </div>
       </section>
     </div>

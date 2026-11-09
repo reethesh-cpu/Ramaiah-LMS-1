@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ArrowRight, ArrowUpRight, ClipboardList, Layers3, ShieldCheck } from 'lucide-react'
+import { BrandLockup } from '@/components/brand-lockup'
 
 const processSteps = [
   { icon: Layers3, title: 'Shape your workbook', detail: 'Choose reusable headers, fields, and categories.' },
@@ -11,11 +12,11 @@ export default function HomePage() {
   return (
     <main className="hero-page">
       <header className="hero-nav">
-        <Link className="brand-lockup" href="/" aria-label="Northstar CRM home">
-          <span className="brand-mark"><Layers3 size={18} /></span>
-          <span className="brand-copy"><span className="brand-name">Northstar</span><span className="brand-caption" style={{ color: '#7e8d99' }}>LEAD OPERATIONS</span></span>
-        </Link>
-        <Link className="secondary-button" href="/sign-in">Sign in <ArrowUpRight /></Link>
+        <BrandLockup />
+        <div className="hero-nav-actions">
+          <a className="hero-site-link" href="https://ramaiahcapital.com" target="_blank" rel="noreferrer">ramaiahcapital.com <ArrowUpRight aria-hidden="true" /></a>
+          <Link className="secondary-button" href="/sign-in">Sign in <ArrowUpRight /></Link>
+        </div>
       </header>
       <section className="hero-content">
         <div className="hero-copy">
@@ -32,12 +33,18 @@ export default function HomePage() {
             <div className="process-row" key={title}>
               <span className="process-icon"><Icon /></span>
               <div><h3>{title}</h3><p>{detail}</p></div>
-              <span style={{ marginLeft: 'auto', color: '#a0adb7', fontSize: 11 }}>0{index + 1}</span>
+              <span style={{ marginLeft: 'auto', color: '#9a9296', fontSize: 11 }}>0{index + 1}</span>
             </div>
           ))}
         </div>
       </section>
-      <footer className="hero-footer">A focused operations workspace for growing teams.</footer>
+      <footer className="hero-footer">
+        <span>A focused operations workspace for growing teams.</span>
+        <nav className="hero-footer-links" aria-label="Footer">
+          <Link href="/terms">Terms &amp; Conditions</Link>
+          <a href="https://ramaiahcapital.com" target="_blank" rel="noreferrer">ramaiahcapital.com <ArrowUpRight aria-hidden="true" /></a>
+        </nav>
+      </footer>
     </main>
   )
 }

@@ -1,6 +1,17 @@
 # Ramaiah-LMS
 
-Northstar CRM - a Next.js + Supabase lead operations workspace.
+Ramaiah Capital lead operations workspace - a Next.js + Supabase app.
+
+## Pages
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Marketing home, with links to `/terms` and https://ramaiahcapital.com |
+| `/terms` | Terms & Conditions |
+| `/sign-in` | Sign in |
+| `/setup` | One-time head office setup |
+| `/admin` | Head office workspace |
+| `/workspace` | Team member workspace |
 
 ## Local setup
 

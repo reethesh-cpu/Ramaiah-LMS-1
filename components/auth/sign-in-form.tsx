@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 import { ArrowLeft, ArrowRight, CircleAlert, Layers3, LoaderCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { BrandLockup } from '@/components/brand-lockup'
 
 export function SignInForm() {
   const router = useRouter()
@@ -94,13 +95,10 @@ export function SignInForm() {
 
   return (
     <div className="auth-page">
-      <section className="auth-story" aria-label="Northstar CRM">
-        <Link className="brand-lockup" href="/" aria-label="Northstar CRM home">
-          <span className="brand-mark"><Layers3 size={18} /></span>
-          <span className="brand-copy"><span className="brand-name">Northstar</span><span className="brand-caption">LEAD OPERATIONS</span></span>
-        </Link>
+      <section className="auth-story" aria-label="Ramaiah Capital">
+        <BrandLockup />
         <div className="auth-story-copy">
-          <div className="kicker" style={{ color: '#a9d8c9' }}>Your team, in sync</div>
+          <div className="kicker" style={{ color: '#ffd9dd' }}>Your team, in sync</div>
           <h1>Work moves forward when everyone sees the next step.</h1>
           <p>One secure workspace for lead data, team activity, and decisions that keep work moving.</p>
           <div className="auth-step-list">
@@ -114,7 +112,7 @@ export function SignInForm() {
         <div className="auth-card">
           <Link href="/" className="quiet-button" style={{ marginBottom: 28, paddingLeft: 0 }}><ArrowLeft /> Back to home</Link>
           <div className="kicker">Welcome back</div>
-          <h2>Sign in to Northstar</h2>
+          <h2>Sign in to Ramaiah Capital</h2>
           <p>Use the email and password provided by your head office administrator.</p>
           <form className="auth-form" onSubmit={handleSubmit}>
             <div className="form-field">
@@ -136,7 +134,7 @@ export function SignInForm() {
               {pending ? <LoaderCircle className="animate-spin" /> : null}{pending ? 'Signing in…' : 'Sign in'}{!pending && <ArrowRight />}
             </button>
           </form>
-          <div className="auth-helper">New organization? <Link href="/setup" style={{ color: '#347765', fontWeight: 650 }}>Set up the first head office account</Link></div>
+          <div className="auth-helper">New organization? <Link href="/setup" style={{ color: '#c8102e', fontWeight: 650 }}>Set up the first head office account</Link></div>
         </div>
       </section>
     </div>

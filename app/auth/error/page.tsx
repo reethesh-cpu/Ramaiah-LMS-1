@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { ArrowLeft, CircleAlert, Layers3 } from 'lucide-react'
+import { ArrowLeft, CircleAlert } from 'lucide-react'
+import { BrandLockup } from '@/components/brand-lockup'
 
 export const metadata: Metadata = { title: 'Email link problem' }
 
@@ -42,13 +43,10 @@ export default async function AuthErrorPage({
 
   return (
     <div className="auth-page">
-      <section className="auth-story" aria-label="Northstar CRM">
-        <Link className="brand-lockup" href="/" aria-label="Northstar CRM home">
-          <span className="brand-mark"><Layers3 size={18} /></span>
-          <span className="brand-copy"><span className="brand-name">Northstar</span><span className="brand-caption">LEAD OPERATIONS</span></span>
-        </Link>
+      <section className="auth-story" aria-label="Ramaiah Capital">
+        <BrandLockup />
         <div className="auth-story-copy">
-          <div className="kicker" style={{ color: '#a9d8c9' }}>Sign-in link</div>
+          <div className="kicker" style={{ color: '#ffd9dd' }}>Sign-in link</div>
           <h1>Security links are single use.</h1>
           <p>Every confirmation link expires after a short while and can only be opened once. Requesting a new one takes a few seconds.</p>
         </div>
@@ -64,7 +62,7 @@ export default async function AuthErrorPage({
             Open the newest confirmation email in the same browser you signed up with. If it still fails, sign in to request a fresh link.
           </p>
           <Link className="primary-button auth-submit" href="/sign-in">Sign in</Link>
-          <div className="auth-helper">Setting up the first account? <Link href="/setup" style={{ color: '#347765', fontWeight: 650 }}>Start workspace setup</Link>.</div>
+          <div className="auth-helper">Setting up the first account? <Link href="/setup" style={{ color: '#c8102e', fontWeight: 650 }}>Start workspace setup</Link>.</div>
         </div>
       </section>
     </div>

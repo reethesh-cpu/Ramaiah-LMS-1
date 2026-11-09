@@ -16,6 +16,7 @@ import {
   Users,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { BrandLockup } from '@/components/brand-lockup'
 
 type Profile = { full_name: string; email: string; role_code: string }
 
@@ -57,10 +58,7 @@ export function AppShell({ profile, isAdmin, children }: { profile: Profile; isA
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        <Link className="brand-lockup" href={isAdmin ? '/admin' : '/workspace'} aria-label="Northstar CRM">
-          <span className="brand-mark"><Layers3 size={18} /></span>
-          <span className="brand-copy"><span className="brand-name">Northstar</span><span className="brand-caption">LEAD OPERATIONS</span></span>
-        </Link>
+        <BrandLockup href={isAdmin ? '/admin' : '/workspace'} label="Ramaiah Capital" />
         <div className="nav-label">Workspace</div>
         <nav className="sidebar-nav" aria-label="Main navigation">
           {links.map(({ href, label, icon: Icon }) => {
@@ -77,7 +75,7 @@ export function AppShell({ profile, isAdmin, children }: { profile: Profile; isA
       </aside>
       <div className="app-main">
         <header className="topbar">
-          <div><div className="topbar-kicker">Northstar CRM</div><div className="topbar-title">{titleForPath(pathname, isAdmin)}</div></div>
+          <div><div className="topbar-kicker">Ramaiah Capital</div><div className="topbar-title">{titleForPath(pathname, isAdmin)}</div></div>
           <div className="topbar-right"><BriefcaseBusiness size={15} /><span>{isAdmin ? 'Head office' : 'Team workspace'}</span></div>
         </header>
         <main className="page-content">{children}</main>

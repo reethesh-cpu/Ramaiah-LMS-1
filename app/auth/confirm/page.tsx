@@ -3,9 +3,10 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CircleAlert, Layers3, LoaderCircle } from 'lucide-react'
+import { ArrowLeft, CircleAlert, LoaderCircle } from 'lucide-react'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { BrandLockup } from '@/components/brand-lockup'
 
 const OTP_TYPES: readonly EmailOtpType[] = ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email']
 
@@ -134,13 +135,10 @@ export default function ConfirmEmailPage() {
 
   return (
     <div className="auth-page">
-      <section className="auth-story" aria-label="Northstar CRM">
-        <Link className="brand-lockup" href="/" aria-label="Northstar CRM home">
-          <span className="brand-mark"><Layers3 size={18} /></span>
-          <span className="brand-copy"><span className="brand-name">Northstar</span><span className="brand-caption">LEAD OPERATIONS</span></span>
-        </Link>
+      <section className="auth-story" aria-label="Ramaiah Capital">
+        <BrandLockup />
         <div className="auth-story-copy">
-          <div className="kicker" style={{ color: '#a9d8c9' }}>Email confirmation</div>
+          <div className="kicker" style={{ color: '#ffd9dd' }}>Email confirmation</div>
           <h1>One click and your account is ready.</h1>
           <p>We verify the link from your inbox, sign you in, and take you straight to the next step.</p>
         </div>
@@ -162,7 +160,7 @@ export default function ConfirmEmailPage() {
           ) : (
             <div className="notice" role="status"><LoaderCircle className="animate-spin" /> Verifying your link…</div>
           )}
-          <div className="auth-helper">Need a new link? <Link href="/sign-in" style={{ color: '#347765', fontWeight: 650 }}>Sign in to resend it</Link>.</div>
+          <div className="auth-helper">Need a new link? <Link href="/sign-in" style={{ color: '#c8102e', fontWeight: 650 }}>Sign in to resend it</Link>.</div>
         </div>
       </section>
     </div>

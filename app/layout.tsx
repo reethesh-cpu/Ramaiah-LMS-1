@@ -4,19 +4,20 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Northstar CRM',
-    template: '%s · Northstar CRM',
+    default: 'Ramaiah Capital',
+    template: '%s · Ramaiah Capital',
   },
-  description: 'A clear, secure workspace for lead workbooks, team assignments, and reporting.',
-  applicationName: 'Northstar CRM',
+  description: 'The Ramaiah Capital lead operations workspace for workbooks, team assignments, and reporting.',
+  applicationName: 'Ramaiah Capital',
   icons: {
-    icon: '/icon.svg',
+    icon: [{ url: '/logo-icon.png', type: 'image/png', sizes: '512x512' }],
+    apple: [{ url: '/apple-icon.png', type: 'image/png', sizes: '180x180' }],
   },
 }
 
 export const viewport: Viewport = {
   colorScheme: 'light',
-  themeColor: '#f5f7fa',
+  themeColor: '#ffffff',
   width: 'device-width',
   initialScale: 1,
   userScalable: true,
