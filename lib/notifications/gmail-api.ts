@@ -9,13 +9,14 @@ export type GmailMessage = {
 export type GmailSendResult = { id: string }
 
 export async function sendWithGoogleMailApi(accessToken: string, message: GmailMessage): Promise<GmailSendResult> {
+  const isHtml = message.text.includes('<!DOCTYPE') || message.text.includes('<html') || message.text.includes('<div')
   const rawMessage = [
     `To: ${message.to}`,
     `Subject: ${message.subject.replace(/[\r\n]/g, ' ')}`,
     'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8',
+    `Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`,
     '',
-    message.text,
+    isHtml ? message.text : message.text,
   ].join('\r\n')
   const raw = Buffer.from(rawMessage, 'utf8').toString('base64url')
   const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
