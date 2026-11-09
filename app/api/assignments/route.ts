@@ -54,11 +54,12 @@ export async function POST(request: Request) {
     if (notifProfiles?.length) {
       const { data: wbRow } = await admin.from('lead_records').select('workbooks(name)').eq('id', leadIds[0]).maybeSingle()
       const wbName = (wbRow as { workbooks?: { name?: string } } | null)?.workbooks?.name ?? 'a workbook'
+      const LMS_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://ramaiahlms.vercel.app'
       await admin.from('notification_outbox').insert(notifProfiles.map((p) => ({
         recipient_id: p.id,
         recipient_email: p.email,
-        subject: `New leads assigned in "${wbName}"`,
-        body: `Hello ${p.full_name},\n\nYou have been assigned leads in the workbook "${wbName}". Sign in to your CRM workspace to review and work on them.`,
+        subject: `New leads assigned to you in "${wbName}"`,
+        body: `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;"><tr><td align="center"><table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);"><tr><td style="background:#c8102e;padding:24px 32px;"><div style="color:#ffffff;font-size:20px;font-weight:700;">Ramaiah Capital LMS</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 8px;font-size:16px;color:#111;">Hello <strong>${p.full_name}</strong>,</p><p style="margin:0 0 24px;font-size:14px;color:#444;line-height:1.6;">You have been assigned leads in the workbook <strong style="color:#c8102e;">${wbName}</strong>. Please open your workspace to review and update your columns.</p><table cellpadding="0" cellspacing="0"><tr><td style="border-radius:6px;background:#c8102e;"><a href="${LMS_URL}/workspace" target="_blank" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px;">Open LMS Workspace</a></td></tr></table><p style="margin:24px 0 0;font-size:12px;color:#888;">This notification was sent from the Ramaiah Capital CRM.</p></td></tr><tr><td style="background:#f4f4f5;padding:16px 32px;font-size:11px;color:#aaa;text-align:center;">© Ramaiah Capital &nbsp;·&nbsp; <a href="${LMS_URL}" style="color:#c8102e;text-decoration:none;">ramaiahlms.vercel.app</a></td></tr></table></td></tr></table></body></html>`,
         sender_id: actor.user.id,
       })))
     }

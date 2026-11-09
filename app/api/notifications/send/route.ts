@@ -28,6 +28,14 @@ export async function POST() {
   if (error) return NextResponse.json({ error: 'The outbox could not be read.' }, { status: 500 })
   if (!pending?.length) return NextResponse.json({ sent: 0, failed: 0, message: 'No pending notifications.' })
 
+  // Mark any legacy plain-text notifications (no DOCTYPE) as sent without
+  // delivering them, so they don't appear as duplicate lead-level emails.
+  const legacyIds = (pending ?? []).filter((e) => !e.body?.includes('<!DOCTYPE')).map((e) => e.id)
+  if (legacyIds.length) {
+    await admin.from('notification_outbox').update({ delivery_status: 'sent', sent_at: new Date().toISOString() }).in('id', legacyIds)
+  }
+  const htmlPending = (pending ?? []).filter((e) => e.body?.includes('<!DOCTYPE'))
+
   // Cache sender profiles and access tokens to avoid repeated lookups.
   const profileCache = new Map<string, { gmail_refresh_token: string | null; allow_email_sending: boolean } | null>()
   const tokenCache = new Map<string, string>() // profileId -> access token (or '' for none)
@@ -86,7 +94,7 @@ export async function POST() {
   let sent = 0
   let failed = 0
 
-  for (const entry of pending) {
+  for (const entry of htmlPending) {
     let token = await getAccessToken(entry.sender_id)
     if (!token) token = await getFallbackToken()
     if (!token) {
