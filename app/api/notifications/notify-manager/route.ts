@@ -69,10 +69,18 @@ export async function POST(request: Request) {
     .from('workbooks').select('id,name').eq('id', workbookId).maybeSingle()
   if (wbError || !workbook) return NextResponse.json({ error: 'The workbook could not be found.' }, { status: 404 })
 
-  // Collect recipients: direct manager + all head_office users (deduped)
+  // Collect recipients: all managers from profile_managers table + profiles.manager_id + all head_office users
   const recipientIdSet = new Set<string>()
+
+  // Primary manager from profiles.manager_id
   if (sender.manager_id) recipientIdSet.add(sender.manager_id)
 
+  // Additional managers from the multi-manager linking table
+  const { data: extraManagers } = await admin
+    .from('profile_managers').select('manager_id').eq('profile_id', sender.id)
+  for (const m of extraManagers ?? []) recipientIdSet.add(m.manager_id)
+
+  // All head_office admins always get notified
   const { data: admins } = await admin
     .from('profiles').select('id').eq('role_code', 'head_office').eq('is_active', true)
   for (const a of admins ?? []) recipientIdSet.add(a.id)
