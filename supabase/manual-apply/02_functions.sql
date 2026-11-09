@@ -137,7 +137,10 @@ as $crm$
       and la.status = 'assigned'
       and tf.template_id = w.template_id
       and tf.field_kind = 'user'
-      and tf.owner_role_code = la.role_code
+      and (
+        tf.owner_profile_id = la.assigned_to
+        or (tf.owner_profile_id is null and tf.owner_role_code = la.role_code)
+      )
   );
 $crm$;
 

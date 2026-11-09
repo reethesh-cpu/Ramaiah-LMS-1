@@ -7,6 +7,7 @@ import {
   BarChart3,
   BriefcaseBusiness,
   ClipboardCheck,
+  Columns3,
   Files,
   FolderKanban,
   LayoutDashboard,
@@ -23,7 +24,8 @@ type Profile = { full_name: string; email: string; role_code: string }
 const adminLinks = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
   { href: '/admin/workbooks', label: 'Workbooks', icon: FolderKanban },
-  { href: '/admin/templates', label: 'Templates & fields', icon: Layers3 },
+  { href: '/admin/templates', label: 'Templates & headers', icon: Layers3 },
+  { href: '/admin/user-columns', label: 'User columns', icon: Columns3 },
   { href: '/admin/categories', label: 'Categories', icon: Tags },
   { href: '/admin/users', label: 'People & access', icon: Users },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },

@@ -105,7 +105,10 @@ begin
   from public.template_fields tf
   where tf.template_id = v_template
     and tf.field_kind = 'user'
-    and tf.owner_role_code = v_assignment.role_code
+    and (
+      tf.owner_profile_id = v_assignment.assigned_to
+      or (tf.owner_profile_id is null and tf.owner_role_code = v_assignment.role_code)
+    )
     and tf.is_required
     and not exists (
       select 1

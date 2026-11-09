@@ -60,13 +60,14 @@ create table if not exists public.template_fields (
   label            text not null,
   field_kind       text not null default 'source' check (field_kind in ('source', 'user')),
   owner_role_code  text references public.role_definitions (role_code) on delete set null,
+  owner_profile_id uuid references public.profiles (id) on delete cascade,
   input_type       text not null default 'text' check (input_type in ('text', 'textarea', 'number', 'date', 'dropdown')),
   options          jsonb not null default '[]'::jsonb,
   is_required      boolean not null default false,
   sort_order       integer not null default 0,
   created_at       timestamptz not null default now(),
   unique (template_id, field_key),
-  check (field_kind <> 'user' or owner_role_code is not null)
+  check (field_kind <> 'user' or owner_role_code is not null or owner_profile_id is not null)
 );
 
 create table if not exists public.workbooks (
@@ -135,6 +136,7 @@ create index if not exists profiles_role_idx on public.profiles (role_code);
 create index if not exists profiles_manager_idx on public.profiles (manager_id);
 create index if not exists profile_managers_manager_idx on public.profile_managers (manager_id);
 create index if not exists template_fields_template_idx on public.template_fields (template_id, sort_order);
+create index if not exists template_fields_owner_profile_idx on public.template_fields (owner_profile_id);
 create index if not exists workbooks_category_idx on public.workbooks (category_id);
 create index if not exists workbooks_template_idx on public.workbooks (template_id);
 create index if not exists workbooks_status_idx on public.workbooks (status);
