@@ -101,8 +101,9 @@ button { cursor: pointer; }
 .section-head p { margin: 5px 0 0; color: var(--muted-foreground); font-size: 12px; }
 .table-wrap { overflow: auto; }
 .data-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; font-size: 12px; }
-.data-table th { padding: 7px 10px; border: 1px solid #d4cbcd; color: #fff; background: #c8102e; font-size: 11px; font-weight: 600; }
-.data-table td { padding: 4px 8px; border: 1px solid #ece6e8; color: #3d3a3c; font-size: 12px; vertical-align: middle; background: #fff; }
+.data-table th { padding: 6px 8px; border: 1px solid #d4cbcd; color: #fff; background: #c8102e; font-size: 11px; font-weight: 600; }
+.data-table td { padding: 3px 7px; border: 1px solid #ece6e8; color: #3d3a3c; font-size: 12px; vertical-align: middle; background: #fff; }
+.data-table td.wrap-cell { white-space: normal; min-width: 120px; max-width: 220px; }
 .data-table tbody tr:nth-child(even) td { background: #faf8f9; }
 .data-table tbody tr:hover td { background: #fff5f6; }
 .data-table input, .data-table select, .data-table textarea { width: 100%; min-width: 80px; border: 1px solid #ddd6d7; border-radius: 4px; padding: 4px 6px; background: #fff; font-size: 12px; color: #3d3a3c; box-sizing: border-box; }
