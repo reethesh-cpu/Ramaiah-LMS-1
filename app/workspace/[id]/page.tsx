@@ -68,6 +68,7 @@ export default function WorkspaceWorkbookPage() {
   const [search, setSearch] = useState('')
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState('')
+  const [notifyBusy, setNotifyBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [formError, setFormError] = useState('')
   const [editingLeadIds, setEditingLeadIds] = useState<Set<string>>(new Set())
@@ -113,6 +114,15 @@ export default function WorkspaceWorkbookPage() {
     if (completeError) setFormError(completeError.message.includes('required') ? completeError.message : 'Assignment could not be completed. Review required fields and try again.')
     else { setNotice('Lead marked complete and moved to your completed work.'); await mutate() }
     setBusy('')
+  }
+
+  async function notifyManager() {
+    setNotifyBusy(true); setFormError(''); setNotice('')
+    const res = await fetch('/api/notifications/notify-manager', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbook_id: workbookId }) })
+    const result = await res.json().catch(() => ({}))
+    if (!res.ok) setFormError(result.error ?? 'Notification could not be sent.')
+    else setNotice(`Notification sent to ${(result.recipients as string[])?.join(', ') ?? 'your manager'}.${result.sent ? ` ${result.sent} email${result.sent === 1 ? '' : 's'} delivered.` : ' Email delivery will happen when Gmail is configured.'}`)
+    setNotifyBusy(false)
   }
 
   function downloadView() {
@@ -163,7 +173,7 @@ export default function WorkspaceWorkbookPage() {
   const tableHeader = <thead><tr><th>Lead</th>{sourceFields.map((field) => <th key={field.id}>{field.label}</th>)}{userFields.map((field) => <th key={field.id}>{ownerLabelFor(field)} · {field.label}</th>)}<th>Team status</th><th>Action</th></tr></thead>
 
   return <>
-    <div className="page-heading"><div><Link className="quiet-button" href="/workspace" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">{data.workbook.categories?.name ?? 'Workbook'} · {data.workbook.templates?.name ?? 'Template'}</div><h1>{data.workbook.name}</h1><p>Review the leads in this workbook, update your own columns, and submit completed work.</p></div><div className="toolbar-actions"><span className="status-pill" data-tone={data.workbook.status === 'closed' ? 'neutral' : data.workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{data.workbook.status}</span><button className="secondary-button" onClick={downloadView}><FileSpreadsheet /> Export view</button></div></div>
+    <div className="page-heading"><div><Link className="quiet-button" href="/workspace" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">{data.workbook.categories?.name ?? 'Workbook'} · {data.workbook.templates?.name ?? 'Template'}</div><h1>{data.workbook.name}</h1><p>Review the leads in this workbook, update your own columns, and submit completed work.</p></div><div className="toolbar-actions"><span className="status-pill" data-tone={data.workbook.status === 'closed' ? 'neutral' : data.workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{data.workbook.status}</span><button className="secondary-button" onClick={notifyManager} disabled={notifyBusy}>{notifyBusy ? <LoaderCircle className="animate-spin" /> : <Send />} Notify manager</button><button className="secondary-button" onClick={downloadView}><FileSpreadsheet /> Export view</button></div></div>
     {(notice || formError) && <div className="notice" data-tone={formError ? 'error' : undefined} role={formError ? 'alert' : 'status'}>{formError || notice}</div>}
     <section className="stat-grid stat-grid-compact"><article className="card stat-card"><div className="stat-top">Open assignments<span className="stat-icon"><Send /></span></div><div className="stat-value">{ownOpenAssignments}</div><div className="form-hint">Assigned directly to you</div></article><article className="card stat-card"><div className="stat-top">Completed<span className="stat-icon"><Check /></span></div><div className="stat-value">{completedCount}</div><div className="form-hint">Submitted by you</div></article><article className="card stat-card"><div className="stat-top">Visible leads<span className="stat-icon"><UsersRound /></span></div><div className="stat-value">{leads.length}</div><div className="form-hint">Includes reports in your team tree</div></article></section>
     <section className="card section-card"><div className="toolbar-row"><div><h2 style={{ margin: 0 }}>Open work</h2><span className="form-hint">Leads assigned to you and your team. Press Complete when your columns are filled.</span></div><div style={{ position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 11, top: 10, color: '#8a8083' }} /><input className="toolbar-search" style={{ paddingLeft: 34 }} aria-label="Search leads" placeholder="Search leads" value={search} onChange={(event) => setSearch(event.target.value)} /></div></div>

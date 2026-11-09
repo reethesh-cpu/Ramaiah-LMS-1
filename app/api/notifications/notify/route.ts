@@ -48,14 +48,15 @@ function buildHtmlEmail(recipientName: string, workbookName: string): string {
 }
 
 // POST /api/notifications/notify
-// Creates notification entries for every assignee in a workbook.
+// Creates notification entries for every assignee in a workbook (or one specific user).
 // Called by the "Notify" button on the admin workbook detail page.
 export async function POST(request: Request) {
   const actor = await getHeadOfficeActor()
   if (actor.error) return NextResponse.json({ error: actor.error }, { status: actor.error === 'unauthorized' ? 401 : 403 })
 
-  const body = await request.json().catch(() => null) as null | { workbook_id?: string }
+  const body = await request.json().catch(() => null) as null | { workbook_id?: string; recipient_id?: string }
   const workbookId = body?.workbook_id
+  const recipientId = body?.recipient_id // optional: notify only this one user
   if (!workbookId) return NextResponse.json({ error: 'A workbook ID is required.' }, { status: 400 })
 
   const admin = createAdminClient()
@@ -76,8 +77,14 @@ export async function POST(request: Request) {
 
   if (raError) return NextResponse.json({ error: 'Assignments could not be loaded.' }, { status: 500 })
 
-  const assigneeIds = [...new Set((rawAssignments ?? []).map((a) => a.assigned_to).filter(Boolean))]
+  let assigneeIds = [...new Set((rawAssignments ?? []).map((a) => a.assigned_to).filter(Boolean))]
   if (!assigneeIds.length) return NextResponse.json({ error: 'No team members are assigned to this workbook yet.' }, { status: 400 })
+
+  // If a specific recipient was requested, filter to just that person.
+  if (recipientId) {
+    if (!assigneeIds.includes(recipientId)) return NextResponse.json({ error: 'This user is not assigned to the workbook.' }, { status: 400 })
+    assigneeIds = [recipientId]
+  }
 
   const { data: recipients, error: rError } = await admin
     .from('profiles').select('id,email,full_name').in('id', assigneeIds).eq('is_active', true)
