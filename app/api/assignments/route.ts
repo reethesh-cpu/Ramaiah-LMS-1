@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       .filter((step) => step.workbook_id === workbookId)
       .sort((a, b) => a.step_order - b.step_order)
       .map((step) => step.role_code)
-    // Workbooks without a flow keep using the Reports to fallback untouched.
+    // Workbooks without a flow only show leads to assigned people and head office.
     if (!existing.length) continue
     const merged = mergeFlowRoles(existing, assignedRoleCodes)
     if (merged.length === existing.length) continue

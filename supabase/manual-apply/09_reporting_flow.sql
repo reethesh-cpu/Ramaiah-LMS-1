@@ -9,8 +9,9 @@
 --      being recreated inside each template.
 --
 -- Visibility rule: a person sees their own assignments plus everything below
--- their role in that workbook's flow. Head office sees everything. When a
--- workbook has no flow, the old per-person "Reports to" links are used.
+-- their role in that workbook's flow. Head office sees everything. A role that
+-- is not in the workbook's flow sees only its own assigned leads. The old
+-- per-person "Reports to" links are no longer used anywhere.
 --
 -- Safe to run more than once in the Supabase SQL Editor.
 
@@ -165,32 +166,6 @@ as $crm$
   limit 1;
 $crm$;
 
--- Kept for backwards compatibility and for the old "Reports to" fallback.
-create or replace function public.is_manager_of(target_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $crm$
-  with recursive managers as (
-    select pm.manager_id as id, 1 as depth
-    from public.profile_managers pm
-    where pm.profile_id = target_id
-    union
-    select pm.manager_id, m.depth + 1
-    from public.profile_managers pm
-    join managers m on pm.profile_id = m.id
-    where m.depth < 32
-  )
-  select exists (
-    select 1
-    from managers
-    where managers.id = auth.uid()
-      and managers.id <> target_id
-  );
-$crm$;
-
 create or replace function public.can_view_assignment(assignment_id uuid)
 returns boolean
 language sql
@@ -204,21 +179,16 @@ as $crm$
     join public.lead_records lr on lr.id = la.lead_id
     where la.id = assignment_id
       and (
-        -- Always see your own work.
+        -- Always see your own work, even if your role is not in the flow.
         la.assigned_to = auth.uid()
         -- Head office sees every column in every workbook.
         or public.is_head_office()
-        -- A role sees every column below it in this workbook's flow.
-        or public.workbook_role_step(lr.workbook_id, public.current_role_code())
-             > public.workbook_role_step(lr.workbook_id, la.role_code)
-        -- Older workbooks without a flow keep the manager-link fallback.
+        -- A role sees every column below it in this workbook's flow. A role
+        -- that is not in the flow has no role step, so it sees only its own.
         or (
-          not exists (
-            select 1
-            from public.workbook_reporting_steps wrs
-            where wrs.workbook_id = lr.workbook_id
-          )
-          and public.is_manager_of(la.assigned_to)
+          public.workbook_role_step(lr.workbook_id, public.current_role_code()) is not null
+          and public.workbook_role_step(lr.workbook_id, public.current_role_code())
+              > public.workbook_role_step(lr.workbook_id, la.role_code)
         )
       )
   );
@@ -394,7 +364,7 @@ end;
 $crm$;
 
 -- ---------------------------------------------------------------------------
--- Completion notifications follow the workbook flow
+-- Completion notifications follow the workbook flow and copy head office
 -- ---------------------------------------------------------------------------
 
 alter table public.notification_outbox
@@ -413,7 +383,6 @@ declare
   v_lead_row      integer;
   v_step          integer;
   v_next_step     integer;
-  v_notified      integer;
   v_subject       text;
   v_body          text;
 begin
@@ -446,34 +415,26 @@ begin
       || coalesce(v_workbook_name, 'a workbook')
       || '". Sign in to your CRM workspace to review the update.';
 
-    if v_next_step is not null then
-      insert into public.notification_outbox (recipient_id, recipient_email, subject, body, sender_id)
-      select p.id, p.email, v_subject, v_body, new.assigned_to
-      from public.profiles p
-      where p.is_active
-        and p.role_code in (
-          select wrs.role_code
-          from public.workbook_reporting_steps wrs
-          where wrs.workbook_id = v_workbook_id
-            and wrs.step_order = v_next_step
-        );
-
-      get diagnostics v_notified = row_count;
-
-      -- If nobody is active at the next step, still reach head office.
-      if v_notified = 0 then
-        insert into public.notification_outbox (recipient_id, recipient_email, subject, body, sender_id)
-        select p.id, p.email, v_subject, v_body, new.assigned_to
-        from public.profiles p
-        where p.role_code = 'head_office' and p.is_active;
-      end if;
-    else
-      -- The top of the flow (or a workbook without a flow) reports to head office.
-      insert into public.notification_outbox (recipient_id, recipient_email, subject, body, sender_id)
-      select p.id, p.email, v_subject, v_body, new.assigned_to
-      from public.profiles p
-      where p.role_code = 'head_office' and p.is_active;
-    end if;
+    -- Notify the next level up the workbook flow and always copy head office.
+    -- A workbook without a flow, or a completion at the top of the flow, still
+    -- reaches head office. The sender is never notified about their own action.
+    insert into public.notification_outbox (recipient_id, recipient_email, subject, body, sender_id)
+    select p.id, p.email, v_subject, v_body, new.assigned_to
+    from public.profiles p
+    where p.is_active
+      and p.id <> new.assigned_to
+      and (
+        p.role_code = 'head_office'
+        or (
+          v_next_step is not null
+          and p.role_code in (
+            select wrs.role_code
+            from public.workbook_reporting_steps wrs
+            where wrs.workbook_id = v_workbook_id
+              and wrs.step_order = v_next_step
+          )
+        )
+      );
   end if;
   return new;
 end;

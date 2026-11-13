@@ -64,8 +64,8 @@ export async function POST(request: Request) {
 
   // Copy the chosen role flow onto the workbook. With no explicit flow, start
   // from the template's default flow so every workbook gets a reporting chain.
-  // If the flow table is not available yet the workbook still opens and falls
-  // back to Reports to links.
+  // If the flow table is not available yet the workbook still opens, but only
+  // assigned people and head office can see its leads.
   let flowSaved = true
   if (!stepRoles.length) {
     const { data: templateSteps, error: templateFlowError } = await admin

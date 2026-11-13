@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 type Field = { id: string; template_id: string | null; field_key: string; label: string; field_kind: 'source' | 'user'; owner_role_code: string | null; owner_profile_id: string | null; input_type: string; options: string[]; is_required: boolean; sort_order: number }
 type Assignment = { id: string; lead_id: string; assigned_to: string; role_code: string; status: 'assigned' | 'completed'; assigned_at: string; completed_at: string | null; assignment_field_values: Array<{ field_id: string; value: unknown; updated_at: string }> }
 type Lead = { id: string; row_number: number; source_values: Record<string, string | number | boolean | null> }
-type Person = { id: string; full_name: string; role_code: string; manager_id: string | null }
+type Person = { id: string; full_name: string; role_code: string }
 type Workbook = { id: string; name: string; status: string; template_id: string; categories: { name: string } | null; templates: { name: string } | null }
 type DetailData = { userId: string; profile: Person; roles: Array<{ role_code: string; label: string }>; people: Person[]; fields: Field[]; workbook: Workbook; leads: Lead[]; assignments: Assignment[] }
 const supabase = createClient()
@@ -26,9 +26,9 @@ async function loadDetail(workbookId: string): Promise<DetailData> {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) throw new Error('Sign in again to load this workbook.')
   const [profileResult, rolesResult, peopleResult, workbookResult] = await Promise.all([
-    supabase.from('profiles').select('id,full_name,role_code,manager_id').eq('id', user.id).single(),
+    supabase.from('profiles').select('id,full_name,role_code').eq('id', user.id).single(),
     supabase.from('role_definitions').select('role_code,label'),
-    supabase.from('profiles').select('id,full_name,role_code,manager_id'),
+    supabase.from('profiles').select('id,full_name,role_code'),
     supabase.from('workbooks').select('id,name,status,template_id,categories(name),templates(name)').eq('id', workbookId).maybeSingle(),
   ])
   if (profileResult.error || !profileResult.data || rolesResult.error || peopleResult.error || workbookResult.error || !workbookResult.data) throw new Error('This workbook is not available to you.')
@@ -104,7 +104,7 @@ export default function WorkspaceWorkbookPage() {
     setBusy(key); setFormError('')
     const { error: saveError } = await supabase.from('assignment_field_values').upsert({ assignment_id: assignment.id, field_id: field.id, value: value === '' ? null : value, updated_by: data?.userId }, { onConflict: 'assignment_id,field_id' })
     if (saveError) setFormError('This field could not be saved. Only the assigned user can edit their own columns.')
-    else { setNotice('Update saved. Changes are visible to your reporting line.'); await mutate() }
+    else { setNotice('Update saved. Changes are visible to the reporting levels above you in this workbook.'); await mutate() }
     setBusy('')
   }
 
@@ -121,7 +121,7 @@ export default function WorkspaceWorkbookPage() {
     const res = await fetch('/api/notifications/notify-manager', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbook_id: workbookId }) })
     const result = await res.json().catch(() => ({}))
     if (!res.ok) setFormError(result.error ?? 'Notification could not be sent.')
-    else setNotice(`Notification sent to ${(result.recipients as string[])?.join(', ') ?? 'your manager'}.${result.sent ? ` ${result.sent} email${result.sent === 1 ? '' : 's'} delivered.` : ' Email delivery will happen when Gmail is configured.'}`)
+    else setNotice(`Notification sent to ${(result.recipients as string[])?.join(', ') ?? 'the next level and head office'}.${result.sent ? ` ${result.sent} email${result.sent === 1 ? '' : 's'} delivered.` : ' Email delivery will happen when Gmail is configured.'}`)
     setNotifyBusy(false)
   }
 
@@ -175,13 +175,13 @@ export default function WorkspaceWorkbookPage() {
   return <>
     <div className="page-heading"><div><Link className="quiet-button" href="/workspace" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">{data.workbook.categories?.name ?? 'Workbook'} · {data.workbook.templates?.name ?? 'Template'}</div><h1>{data.workbook.name}</h1><p>Review the leads in this workbook, update your own columns, and submit completed work.</p></div><div className="toolbar-actions"><span className="status-pill" data-tone={data.workbook.status === 'closed' ? 'neutral' : data.workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{data.workbook.status}</span><button className="secondary-button" onClick={notifyManager} disabled={notifyBusy}>{notifyBusy ? <LoaderCircle className="animate-spin" /> : <Send />} Notify manager</button><button className="secondary-button" onClick={downloadView}><FileSpreadsheet /> Export view</button></div></div>
     {(notice || formError) && <div className="notice" data-tone={formError ? 'error' : undefined} role={formError ? 'alert' : 'status'}>{formError || notice}</div>}
-    <section className="stat-grid stat-grid-compact"><article className="card stat-card"><div className="stat-top">Open assignments<span className="stat-icon"><Send /></span></div><div className="stat-value">{ownOpenAssignments}</div><div className="form-hint">Assigned directly to you</div></article><article className="card stat-card"><div className="stat-top">Completed<span className="stat-icon"><Check /></span></div><div className="stat-value">{completedCount}</div><div className="form-hint">Submitted by you</div></article><article className="card stat-card"><div className="stat-top">Visible leads<span className="stat-icon"><UsersRound /></span></div><div className="stat-value">{leads.length}</div><div className="form-hint">Includes reports in your team tree</div></article></section>
+    <section className="stat-grid stat-grid-compact"><article className="card stat-card"><div className="stat-top">Open assignments<span className="stat-icon"><Send /></span></div><div className="stat-value">{ownOpenAssignments}</div><div className="form-hint">Assigned directly to you</div></article><article className="card stat-card"><div className="stat-top">Completed<span className="stat-icon"><Check /></span></div><div className="stat-value">{completedCount}</div><div className="form-hint">Submitted by you</div></article><article className="card stat-card"><div className="stat-top">Visible leads<span className="stat-icon"><UsersRound /></span></div><div className="stat-value">{leads.length}</div><div className="form-hint">Visible through this workbook's flow</div></article></section>
     <section className="card section-card"><div className="toolbar-row"><div><h2 style={{ margin: 0 }}>Open work</h2><span className="form-hint">Leads assigned to you and your team. Press Complete when your columns are filled.</span></div><div style={{ position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 11, top: 10, color: '#8a8083' }} /><input className="toolbar-search" style={{ paddingLeft: 34 }} aria-label="Search leads" placeholder="Search leads" value={search} onChange={(event) => setSearch(event.target.value)} /></div></div>
-      {!openWorkLeads.length ? <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>{leads.length ? 'No open work matching your search' : 'Nothing assigned in this workbook'}</h3><p>{leads.length ? 'Try a different search term.' : 'When work is assigned to you or your reporting line, it will appear here.'}</p></div> : <div className="table-wrap"><table className="data-table">{tableHeader}<tbody>{openWorkLeads.map(renderLeadRow)}</tbody></table></div>}
+      {!openWorkLeads.length ? <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>{leads.length ? 'No open work matching your search' : 'Nothing assigned in this workbook'}</h3><p>{leads.length ? 'Try a different search term.' : 'When work is assigned to you or your role is in this workbook\'s flow, it will appear here.'}</p></div> : <div className="table-wrap"><table className="data-table">{tableHeader}<tbody>{openWorkLeads.map(renderLeadRow)}</tbody></table></div>}
     </section>
     {myCompletedLeads.length > 0 && <section className="card section-card" style={{ marginTop: 16 }}><div className="section-head"><div><h2>Completed work</h2><p>Leads you finished. Press Edit to update your columns, then Done to save.</p></div><span className="status-pill" data-tone="neutral"><span className="status-dot" />{myCompletedLeads.length} completed</span></div>
       <div className="table-wrap"><table className="data-table">{tableHeader}<tbody>{myCompletedLeads.map(renderLeadRow)}</tbody></table></div>
     </section>}
-    {data.profile.manager_id && <div className="notice"><Check /> Updates are shared with your reporting line. Uploaded source data stays read-only in this workspace.</div>}
+    <div className="notice"><Check /> Updates are shared with the reporting levels above you in this workbook's flow. Uploaded source data stays read-only in this workspace.</div>
   </>
 }

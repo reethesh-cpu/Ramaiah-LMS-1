@@ -5,7 +5,7 @@ import { BrandLockup } from '@/components/brand-lockup'
 const processSteps = [
   { icon: Layers3, title: 'Shape your workbook', detail: 'Choose reusable headers, fields, and categories.' },
   { icon: ClipboardList, title: 'Route work clearly', detail: 'Send leads to the right people and teams.' },
-  { icon: ShieldCheck, title: 'Keep every update visible', detail: 'Follow progress through your reporting line.' },
+  { icon: ShieldCheck, title: 'Keep every update visible', detail: 'Follow progress through each workbook\'s reporting flow.' },
 ]
 
 export default function HomePage() {

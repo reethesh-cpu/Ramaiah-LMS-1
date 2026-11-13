@@ -7,6 +7,7 @@ import useSWR from 'swr'
 import * as XLSX from 'xlsx'
 import { ArrowLeft, ArrowRight, Check, CircleAlert, FileSpreadsheet, GitBranch, LoaderCircle, Upload, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { mergeFlowRoles } from '@/lib/crm/reporting-flow'
 import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 
 type Category = { id: string; name: string }
@@ -52,16 +53,22 @@ export function WorkbookCreateForm() {
   const selectedTemplateId = templateId && templates.some((template) => template.id === templateId) ? templateId : templates[0]?.id ?? ''
   const sourceFields = useMemo(() => (data?.fields ?? []).filter((field) => field.template_id === selectedTemplateId && field.field_kind === 'source').sort((a, b) => a.sort_order - b.sort_order), [data?.fields, selectedTemplateId])
   const roleLabels = useMemo(() => new Map((data?.roles ?? []).map((role) => [role.role_code, role.label])), [data?.roles])
+  const templateFlowRank = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const step of data?.steps ?? []) {
+      if (step.template_id === selectedTemplateId) map.set(step.role_code, step.step_order)
+    }
+    return map
+  }, [data?.steps, selectedTemplateId])
   const assignablePeople = useMemo(() => {
-    const roleOrder = ['telecaller', 'team_member', 'agm', 'hr', 'ceo']
     return (data?.people ?? [])
       .filter((person) => person.role_code !== 'head_office')
       .sort((a, b) => {
-        const aIndex = roleOrder.indexOf(a.role_code)
-        const bIndex = roleOrder.indexOf(b.role_code)
-        return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex) || a.full_name.localeCompare(b.full_name)
+        const aIndex = templateFlowRank.get(a.role_code) ?? 999
+        const bIndex = templateFlowRank.get(b.role_code) ?? 999
+        return aIndex - bIndex || a.full_name.localeCompare(b.full_name)
       })
-  }, [data?.people])
+  }, [data?.people, templateFlowRank])
   const selectedPeople = assigneeIds.map((id) => assignablePeople.find((person) => person.id === id)).filter((person): person is Person => Boolean(person))
 
   // Start from the template's saved flow. Head office can reorder it for this workbook.
@@ -113,9 +120,9 @@ export function WorkbookCreateForm() {
     const wasSelected = assigneeIds.includes(id)
     setAssigneeIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
     // A selected person's role must exist in the flow, otherwise they would only
-    // see their own work. Add missing roles at the top of the chain.
+    // see their own work. Insert the role in its canonical place.
     if (!wasSelected && person) {
-      setFlowRoleCodes((current) => current.includes(person.role_code) ? current : [...current, person.role_code])
+      setFlowRoleCodes((current) => mergeFlowRoles(current, [person.role_code]))
     }
   }
 
@@ -162,12 +169,12 @@ export function WorkbookCreateForm() {
     </section>
     <section className="card card-pad" style={{ marginTop: 16 }}>
       <div className="kicker">03 · Reporting & notification flow</div>
-      <div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Confirm this workbook's flow</h2><p>This flow starts from the template. Reorder it for this workbook if the escalation changes. The lowest role sees only their own columns; each role above sees every column below it. Completion notices go to the next step up.</p></div><GitBranch color="#6b6265" /></div>
-      {!data?.flowReady && <div className="notice" data-tone="error" style={{ marginBottom: 12 }}>The reporting-flow SQL has not been applied, so workbook creation will use each person's Reports to links instead.</div>}
+      <div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Confirm this workbook's flow</h2><p>This flow starts from the template. Reorder it for this workbook if the escalation changes. The lowest role sees only their own columns; each role above sees every column below it. Completion notices go to the next step up and head office.</p></div><GitBranch color="#6b6265" /></div>
+      {!data?.flowReady && <div className="notice" data-tone="error" style={{ marginBottom: 12 }}>The reporting-flow SQL has not been applied, so this workbook will have no flow. Only assigned people and head office will be able to see its leads until it is applied.</div>}
       <ReportingFlowEditor value={flowRoleCodes} onChange={setFlowRoleCodes} roles={data?.roles ?? []} disabled={pending} emptyHint="No flow set. Select people below and their roles will be added here." />
       <div className="kicker" style={{ marginTop: 24 }}>04 · Assign work</div><div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Choose who receives the leads</h2><p>Pick the people who should receive these leads. Each selected person gets every imported lead and can fill their own columns. Selecting someone adds their role to the flow automatically.</p></div><UsersRound color="#6b6265" /></div>
       {assignablePeople.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 8 }}>{assignablePeople.map((person) => { const order = assigneeIds.indexOf(person.id); const selected = order >= 0; return <label key={person.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, border: `1px solid ${selected ? '#e7a9b2' : 'var(--border)'}`, background: selected ? '#fffafb' : '#fff', borderRadius: 10, cursor: 'pointer' }}><input type="checkbox" checked={selected} onChange={() => toggleAssignee(person.id)} /><span style={{ width: 20, height: 20, borderRadius: '50%', display: 'grid', placeItems: 'center', background: selected ? '#c8102e' : '#f3eef0', color: selected ? '#fff' : '#8a8083', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{selected ? order + 1 : '·'}</span><span><strong style={{ display: 'block', fontSize: 12 }}>{person.full_name}</strong><span className="form-hint">{roleLabels.get(person.role_code) ?? person.role_code}</span></span>{selected && <Check size={15} style={{ marginLeft: 'auto', color: '#c8102e' }} />}</label>})}</div> : <p className="form-hint">No active assignees yet. You can assign this workbook later from its detail page.</p>}
-      {selectedPeople.length ? <div className="notice" style={{ marginTop: 14 }}><UsersRound /> <span><strong>Hand-off chain:</strong> {selectedPeople.map((person, index) => <span key={person.id}>{index > 0 ? ' → ' : ' '}{person.full_name} ({roleLabels.get(person.role_code) ?? person.role_code})</span>)}</span></div> : assignablePeople.length ? <p className="form-hint" style={{ marginTop: 12 }}>Select at least one person so the imported leads are moved to them.</p> : <p className="form-hint" style={{ marginTop: 12 }}>No active assignees yet. Create the workbook and assign it later from its detail page.</p>}
+      {selectedPeople.length ? <div className="notice" style={{ marginTop: 14 }}><UsersRound /> <span><strong>Hand-off chain:</strong> {selectedPeople.map((person, index) => <span key={person.id}>{index > 0 ? ' → ' : ' '}{person.full_name} ({roleLabels.get(person.role_code) ?? person.role_code} · level {flowRoleCodes.indexOf(person.role_code) + 1})</span>)}</span></div> : assignablePeople.length ? <p className="form-hint" style={{ marginTop: 12 }}>Select at least one person so the imported leads are moved to them.</p> : <p className="form-hint" style={{ marginTop: 12 }}>No active assignees yet. Create the workbook and assign it later from its detail page.</p>}
     </section>
     <div className="form-actions"><Link className="secondary-button" href="/admin/workbooks">Cancel</Link><button className="primary-button" disabled={pending || !categories.length || !selectedTemplateId || !rawRows.length || (assignablePeople.length > 0 && !assigneeIds.length)}>{pending ? <LoaderCircle className="animate-spin" /> : <ArrowRight />}{pending ? 'Importing…' : `Create workbook${rawRows.length ? ` · ${rawRows.length} leads` : ''}`}</button></div>
   </form>
