@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getHeadOfficeActor } from '@/lib/crm/server-auth'
+import { mergeFlowRoles } from '@/lib/crm/reporting-flow'
 
 const CHUNK_SIZE = 500
 
@@ -12,12 +13,15 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null) as null | {
     name?: string; category_id?: string; template_id?: string; status?: string;
-    rows?: ImportRow[]; assignee_ids?: string[];
+    rows?: ImportRow[]; assignee_ids?: string[]; reporting_steps?: Array<{ role_code?: string; step_order?: number }>;
   }
   const name = body?.name?.trim()
   const rows = body?.rows
   const assigneeIds = [...new Set(body?.assignee_ids ?? [])]
-  if (!name || name.length > 120 || !body?.category_id || !body?.template_id || !Array.isArray(rows) || rows.length < 1 || rows.length > 5000 || assigneeIds.length > 20) {
+  let stepRoles = [...new Set((body?.reporting_steps ?? [])
+    .map((step) => step?.role_code)
+    .filter((role): role is string => typeof role === 'string' && role.trim().length > 0))]
+  if (!name || name.length > 120 || !body?.category_id || !body?.template_id || !Array.isArray(rows) || rows.length < 1 || rows.length > 5000 || assigneeIds.length > 20 || stepRoles.length > 20) {
     return NextResponse.json({ error: 'Add a workbook name, category, template, and a file with 1–5,000 rows.' }, { status: 400 })
   }
   if (body.status && !['active', 'ongoing', 'closed'].includes(body.status)) return NextResponse.json({ error: 'Choose a valid workbook status.' }, { status: 400 })
@@ -45,6 +49,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'One or more selected team members are unavailable.' }, { status: 400 })
   }
 
+  // Every assigned person's role must exist in the flow, otherwise they would
+  // only see their own column. Add any missing roles in their canonical place.
+  stepRoles = mergeFlowRoles(stepRoles, (assignees ?? []).map((person) => person.role_code))
+
   const { data: workbook, error: workbookError } = await admin.from('workbooks').insert({
     name,
     category_id: category.id,
@@ -53,6 +61,24 @@ export async function POST(request: Request) {
     created_by: actor.user.id,
   }).select('id').single()
   if (workbookError || !workbook) return NextResponse.json({ error: 'The workbook could not be created.' }, { status: 500 })
+
+  // Copy the chosen role flow onto the workbook. With no explicit flow, start
+  // from the template's default flow so every workbook gets a reporting chain.
+  // If the flow table is not available yet the workbook still opens and falls
+  // back to Reports to links.
+  let flowSaved = true
+  if (!stepRoles.length) {
+    const { data: templateSteps, error: templateFlowError } = await admin
+      .from('template_reporting_steps').select('role_code').eq('template_id', template.id).order('step_order')
+    if (templateFlowError) flowSaved = false
+    stepRoles = (templateSteps ?? []).map((step) => step.role_code)
+  }
+  if (stepRoles.length) {
+    const { error: flowError } = await admin.from('workbook_reporting_steps').insert(
+      stepRoles.map((role_code, index) => ({ workbook_id: workbook.id, role_code, step_order: index + 1 })),
+    )
+    if (flowError) flowSaved = false
+  }
 
   const leadIds: string[] = []
   for (let offset = 0; offset < rows.length; offset += CHUNK_SIZE) {
@@ -97,5 +123,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ workbook_id: workbook.id, lead_count: leadIds.length, assigned_to: assigneeIds.length }, { status: 201 })
+  return NextResponse.json({ workbook_id: workbook.id, lead_count: leadIds.length, assigned_to: assigneeIds.length, reporting_flow_saved: flowSaved }, { status: 201 })
 }

@@ -1,30 +1,33 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
-import { ArrowLeft, ArrowRight, Check, CircleAlert, FileSpreadsheet, LoaderCircle, Upload, UsersRound } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CircleAlert, FileSpreadsheet, GitBranch, LoaderCircle, Upload, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 
 type Category = { id: string; name: string }
 type Template = { id: string; name: string; category_id: string | null }
 type Field = { id: string; template_id: string; field_key: string; label: string; field_kind: string; is_required: boolean; sort_order: number }
 type Person = { id: string; full_name: string; role_code: string; is_active: boolean }
+type Step = { template_id: string; role_code: string; step_order: number }
 type RawRow = Record<string, string | number | boolean | null>
 const supabase = createClient()
 
 async function loadOptions() {
-  const [categories, templates, fields, people, roles] = await Promise.all([
+  const [categories, templates, fields, people, roles, steps] = await Promise.all([
     supabase.from('categories').select('id,name').eq('is_active', true).order('name'),
     supabase.from('templates').select('id,name,category_id').order('name'),
     supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,is_required,sort_order').order('sort_order'),
     supabase.from('profiles').select('id,full_name,role_code,is_active').eq('is_active', true).order('full_name'),
-    supabase.from('role_definitions').select('role_code,label'),
+    supabase.from('role_definitions').select('role_code,label').order('label'),
+    supabase.from('template_reporting_steps').select('template_id,role_code,step_order').order('step_order'),
   ])
   if (categories.error || templates.error || fields.error || people.error || roles.error) throw new Error('Workbook setup options could not be loaded.')
-  return { categories: (categories.data ?? []) as Category[], templates: (templates.data ?? []) as Template[], fields: (fields.data ?? []) as Field[], people: (people.data ?? []) as Person[], roles: roles.data ?? [] }
+  return { categories: (categories.data ?? []) as Category[], templates: (templates.data ?? []) as Template[], fields: (fields.data ?? []) as Field[], people: (people.data ?? []) as Person[], roles: roles.data ?? [], steps: (steps.data ?? []) as Step[], flowReady: !steps.error }
 }
 
 function normalize(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, '') }
@@ -39,6 +42,7 @@ export function WorkbookCreateForm() {
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [fileName, setFileName] = useState('')
   const [assigneeIds, setAssigneeIds] = useState<string[]>([])
+  const [flowRoleCodes, setFlowRoleCodes] = useState<string[]>([])
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState('')
   const [formError, setFormError] = useState('')
@@ -47,7 +51,7 @@ export function WorkbookCreateForm() {
   const templates = allTemplates.filter((template) => !template.category_id || !categoryId || template.category_id === categoryId)
   const selectedTemplateId = templateId && templates.some((template) => template.id === templateId) ? templateId : templates[0]?.id ?? ''
   const sourceFields = useMemo(() => (data?.fields ?? []).filter((field) => field.template_id === selectedTemplateId && field.field_kind === 'source').sort((a, b) => a.sort_order - b.sort_order), [data?.fields, selectedTemplateId])
-  const roleLabels = new Map((data?.roles ?? []).map((role) => [role.role_code, role.label]))
+  const roleLabels = useMemo(() => new Map((data?.roles ?? []).map((role) => [role.role_code, role.label])), [data?.roles])
   const assignablePeople = useMemo(() => {
     const roleOrder = ['telecaller', 'team_member', 'agm', 'hr', 'ceo']
     return (data?.people ?? [])
@@ -59,6 +63,14 @@ export function WorkbookCreateForm() {
       })
   }, [data?.people])
   const selectedPeople = assigneeIds.map((id) => assignablePeople.find((person) => person.id === id)).filter((person): person is Person => Boolean(person))
+
+  // Start from the template's saved flow. Head office can reorder it for this workbook.
+  useEffect(() => {
+    const templateSteps = (data?.steps ?? [])
+      .filter((step) => step.template_id === selectedTemplateId)
+      .sort((a, b) => a.step_order - b.step_order)
+    setFlowRoleCodes(templateSteps.map((step) => step.role_code))
+  }, [selectedTemplateId, data?.steps])
 
   function autoMap(fileHeaders: string[], currentTemplateId: string) {
     const fields = (data?.fields ?? []).filter((field) => field.template_id === currentTemplateId && field.field_kind === 'source')
@@ -97,7 +109,14 @@ export function WorkbookCreateForm() {
   }
 
   function toggleAssignee(id: string) {
+    const person = assignablePeople.find((candidate) => candidate.id === id)
+    const wasSelected = assigneeIds.includes(id)
     setAssigneeIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+    // A selected person's role must exist in the flow, otherwise they would only
+    // see their own work. Add missing roles at the top of the chain.
+    if (!wasSelected && person) {
+      setFlowRoleCodes((current) => current.includes(person.role_code) ? current : [...current, person.role_code])
+    }
   }
 
   async function submitWorkbook(event: FormEvent<HTMLFormElement>) {
@@ -113,7 +132,7 @@ export function WorkbookCreateForm() {
     if (rows.some((row) => requiredSourceFields.some((field) => row[field.field_key] === null || String(row[field.field_key] ?? '').trim() === ''))) {
       setFormError('Some rows have blank values in required columns. Correct the file and upload it again.'); setPending(false); return
     }
-  const response = await fetch('/api/workbooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: String(form.get('name')).trim(), category_id: categoryId, template_id: selectedTemplateId, status: form.get('status'), rows, assignee_ids: assigneeIds }) })
+  const response = await fetch('/api/workbooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: String(form.get('name')).trim(), category_id: categoryId, template_id: selectedTemplateId, status: form.get('status'), rows, assignee_ids: assigneeIds, reporting_steps: flowRoleCodes.map((role_code, index) => ({ role_code, step_order: index + 1 })) }) })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) { setFormError(result.error ?? 'The workbook could not be saved.'); setPending(false); return }
     router.push(`/admin/workbooks/${result.workbook_id}`)
@@ -142,7 +161,11 @@ export function WorkbookCreateForm() {
       {selectedTemplateId && sourceFields.length === 0 && <div className="notice" data-tone="error"><CircleAlert />The selected template has no uploaded-data fields. Add source columns to the template before continuing.</div>}
     </section>
     <section className="card card-pad" style={{ marginTop: 16 }}>
-      <div className="kicker">03 · Assign work</div><div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Choose the hand-off chain</h2><p>Pick the people who should receive these leads, in order — for example telecaller → AGM → HR → CEO. Each selected person gets every imported lead and can fill their own columns. Reporting managers see the work automatically, even if they are not selected.</p></div><UsersRound color="#6b6265" /></div>
+      <div className="kicker">03 · Reporting & notification flow</div>
+      <div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Confirm this workbook's flow</h2><p>This flow starts from the template. Reorder it for this workbook if the escalation changes. The lowest role sees only their own columns; each role above sees every column below it. Completion notices go to the next step up.</p></div><GitBranch color="#6b6265" /></div>
+      {!data?.flowReady && <div className="notice" data-tone="error" style={{ marginBottom: 12 }}>The reporting-flow SQL has not been applied, so workbook creation will use each person's Reports to links instead.</div>}
+      <ReportingFlowEditor value={flowRoleCodes} onChange={setFlowRoleCodes} roles={data?.roles ?? []} disabled={pending} emptyHint="No flow set. Select people below and their roles will be added here." />
+      <div className="kicker" style={{ marginTop: 24 }}>04 · Assign work</div><div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Choose who receives the leads</h2><p>Pick the people who should receive these leads. Each selected person gets every imported lead and can fill their own columns. Selecting someone adds their role to the flow automatically.</p></div><UsersRound color="#6b6265" /></div>
       {assignablePeople.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 8 }}>{assignablePeople.map((person) => { const order = assigneeIds.indexOf(person.id); const selected = order >= 0; return <label key={person.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, border: `1px solid ${selected ? '#e7a9b2' : 'var(--border)'}`, background: selected ? '#fffafb' : '#fff', borderRadius: 10, cursor: 'pointer' }}><input type="checkbox" checked={selected} onChange={() => toggleAssignee(person.id)} /><span style={{ width: 20, height: 20, borderRadius: '50%', display: 'grid', placeItems: 'center', background: selected ? '#c8102e' : '#f3eef0', color: selected ? '#fff' : '#8a8083', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{selected ? order + 1 : '·'}</span><span><strong style={{ display: 'block', fontSize: 12 }}>{person.full_name}</strong><span className="form-hint">{roleLabels.get(person.role_code) ?? person.role_code}</span></span>{selected && <Check size={15} style={{ marginLeft: 'auto', color: '#c8102e' }} />}</label>})}</div> : <p className="form-hint">No active assignees yet. You can assign this workbook later from its detail page.</p>}
       {selectedPeople.length ? <div className="notice" style={{ marginTop: 14 }}><UsersRound /> <span><strong>Hand-off chain:</strong> {selectedPeople.map((person, index) => <span key={person.id}>{index > 0 ? ' → ' : ' '}{person.full_name} ({roleLabels.get(person.role_code) ?? person.role_code})</span>)}</span></div> : assignablePeople.length ? <p className="form-hint" style={{ marginTop: 12 }}>Select at least one person so the imported leads are moved to them.</p> : <p className="form-hint" style={{ marginTop: 12 }}>No active assignees yet. Create the workbook and assign it later from its detail page.</p>}
     </section>

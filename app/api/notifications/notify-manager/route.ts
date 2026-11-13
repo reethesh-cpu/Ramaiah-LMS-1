@@ -69,23 +69,42 @@ export async function POST(request: Request) {
     .from('workbooks').select('id,name').eq('id', workbookId).maybeSingle()
   if (wbError || !workbook) return NextResponse.json({ error: 'The workbook could not be found.' }, { status: 404 })
 
-  // Collect recipients: all managers from profile_managers table + profiles.manager_id + all head_office users
+  // Prefer the workbook's reporting flow: notify the next role above the sender.
   const recipientIdSet = new Set<string>()
+  const { data: flowSteps } = await admin
+    .from('workbook_reporting_steps').select('role_code,step_order').eq('workbook_id', workbookId).order('step_order')
 
-  // Primary manager from profiles.manager_id
-  if (sender.manager_id) recipientIdSet.add(sender.manager_id)
+  if (flowSteps?.length) {
+    const senderStep = flowSteps.find((step) => step.role_code === sender.role_code)?.step_order
+    const nextStep = senderStep == null ? null : flowSteps
+      .filter((step) => step.step_order > senderStep)
+      .sort((a, b) => a.step_order - b.step_order)[0]
+    if (nextStep) {
+      const { data: nextPeople } = await admin
+        .from('profiles').select('id').eq('role_code', nextStep.role_code).eq('is_active', true)
+      for (const person of nextPeople ?? []) recipientIdSet.add(person.id)
+      recipientIdSet.delete(sender.id)
+    }
+  }
 
-  // Additional managers from the multi-manager linking table
-  const { data: extraManagers } = await admin
-    .from('profile_managers').select('manager_id').eq('profile_id', sender.id)
-  for (const m of extraManagers ?? []) recipientIdSet.add(m.manager_id)
+  // Workbooks without a usable flow (or the top of the flow) use the old
+  // manager links and head office.
+  if (!recipientIdSet.size) {
+    // Primary manager from profiles.manager_id
+    if (sender.manager_id) recipientIdSet.add(sender.manager_id)
 
-  // All head_office admins always get notified
-  const { data: admins } = await admin
-    .from('profiles').select('id').eq('role_code', 'head_office').eq('is_active', true)
-  for (const a of admins ?? []) recipientIdSet.add(a.id)
+    // Additional managers from the multi-manager linking table
+    const { data: extraManagers } = await admin
+      .from('profile_managers').select('manager_id').eq('profile_id', sender.id)
+    for (const m of extraManagers ?? []) recipientIdSet.add(m.manager_id)
 
-  // Remove the sender themselves in case they are head_office
+    // All head_office admins always get notified
+    const { data: admins } = await admin
+      .from('profiles').select('id').eq('role_code', 'head_office').eq('is_active', true)
+    for (const a of admins ?? []) recipientIdSet.add(a.id)
+  }
+
+  // Remove the sender themselves in case they are head_office or share the next role.
   recipientIdSet.delete(sender.id)
 
   if (!recipientIdSet.size) return NextResponse.json({ error: 'No managers or admins found to notify.' }, { status: 400 })

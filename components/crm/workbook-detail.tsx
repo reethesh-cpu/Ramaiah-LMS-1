@@ -1,35 +1,38 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
-import { ArrowLeft, Bell, Check, Download, Flag, LoaderCircle, Mail, Save, Send, UserRoundPlus } from 'lucide-react'
+import { ArrowLeft, Bell, Check, Download, Flag, GitBranch, LoaderCircle, Mail, Save, Send, UserRoundPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 
 type Workbook = { id: string; name: string; status: string; is_prioritized: boolean; category_id: string; template_id: string; created_at: string; categories: { name: string } | null; templates: { name: string } | null }
 type Lead = { id: string; workbook_id: string; row_number: number; source_values: Record<string, string | number | boolean | null> }
 type Field = { id: string; field_key: string; label: string; field_kind: 'source' | 'user'; owner_role_code: string | null; owner_profile_id: string | null; input_type: string; options: string[]; is_required: boolean; sort_order: number }
 type Person = { id: string; full_name: string; email: string; role_code: string; is_active: boolean }
 type Assignment = { id: string; lead_id: string; assigned_to: string; role_code: string; status: string; assigned_at: string; completed_at: string | null; assignment_field_values: Array<{ field_id: string; value: unknown; updated_at: string }> }
-type DetailData = { workbook: Workbook; leads: Lead[]; fields: Field[]; people: Person[]; assignments: Assignment[]; roles: Array<{ role_code: string; label: string }> }
+type Step = { role_code: string; step_order: number }
+type DetailData = { workbook: Workbook; leads: Lead[]; fields: Field[]; people: Person[]; assignments: Assignment[]; roles: Array<{ role_code: string; label: string }>; steps: Step[] }
 const supabase = createClient()
 
 async function loadFields(templateId: string) {
-  const full = await supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order').eq('template_id', templateId).order('sort_order')
+  const full = await supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
   if (!full.error) return full
-  return supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,input_type,options,is_required,sort_order').eq('template_id', templateId).order('sort_order')
+  return supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
 }
 
 async function loadWorkbook(id: string): Promise<DetailData> {
   const { data: workbook, error: workbookError } = await supabase.from('workbooks').select('id,name,status,is_prioritized,category_id,template_id,created_at,categories(name),templates(name)').eq('id', id).maybeSingle()
   if (workbookError || !workbook) throw new Error('Workbook could not be loaded.')
-  const [leadResult, fieldResult, peopleResult, roleResult] = await Promise.all([
+  const [leadResult, fieldResult, peopleResult, roleResult, stepResult] = await Promise.all([
     supabase.from('lead_records').select('id,workbook_id,row_number,source_values').eq('workbook_id', id).order('row_number').range(0, 4999),
     loadFields(workbook.template_id),
     supabase.from('profiles').select('id,full_name,email,role_code,is_active').order('full_name'),
     supabase.from('role_definitions').select('role_code,label'),
+    supabase.from('workbook_reporting_steps').select('role_code,step_order').eq('workbook_id', id).order('step_order'),
   ])
   if (leadResult.error || fieldResult.error || peopleResult.error || roleResult.error) throw new Error('Workbook details could not be loaded.')
   const leads = (leadResult.data ?? []) as Lead[]
@@ -37,7 +40,7 @@ async function loadWorkbook(id: string): Promise<DetailData> {
     ? await supabase.from('lead_assignments').select('id,lead_id,assigned_to,role_code,status,assigned_at,completed_at,assignment_field_values(field_id,value,updated_at)').in('lead_id', leads.map((lead) => lead.id)).order('assigned_at', { ascending: false }).range(0, 49999)
     : { data: [], error: null }
   if (assignmentError) throw new Error('Assignment details could not be loaded.')
-  return { workbook: workbook as unknown as Workbook, leads, fields: (fieldResult.data ?? []) as Field[], people: (peopleResult.data ?? []) as Person[], assignments: (assignments ?? []) as unknown as Assignment[], roles: roleResult.data ?? [] }
+  return { workbook: workbook as unknown as Workbook, leads, fields: (fieldResult.data ?? []) as Field[], people: (peopleResult.data ?? []) as Person[], assignments: (assignments ?? []) as unknown as Assignment[], roles: roleResult.data ?? [], steps: stepResult.error ? [] : (stepResult.data ?? []) as Step[] }
 }
 
 export function WorkbookDetail({ workbookId }: { workbookId: string }) {
@@ -48,6 +51,7 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
   const [editName, setEditName] = useState('')
   const [editStatus, setEditStatus] = useState('')
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [flowRoleCodes, setFlowRoleCodes] = useState<string[]>([])
   const [pending, setPending] = useState(false)
   const [notifyPending, setNotifyPending] = useState(false)
   const [notice, setNotice] = useState('')
@@ -77,6 +81,10 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     return groups
   }, [data?.assignments])
 
+  useEffect(() => {
+    setFlowRoleCodes([...(data?.steps ?? [])].sort((a, b) => a.step_order - b.step_order).map((step) => step.role_code))
+  }, [data?.steps])
+
   async function saveWorkbook(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!workbook) return
     setPending(true); setFormError(''); setNotice('')
@@ -92,6 +100,15 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     const response = await fetch(`/api/workbooks/${workbook.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_prioritized: !workbook.is_prioritized }) })
     if (!response.ok) setFormError('Priority could not be updated.')
     else { setNotice(workbook.is_prioritized ? 'Priority removed.' : 'Workbook prioritized.'); await mutate() }
+  }
+
+  async function saveFlow() {
+    if (!workbook) return
+    setPending(true); setFormError(''); setNotice('')
+    const { error: flowError } = await supabase.rpc('set_workbook_reporting_steps', { p_workbook_id: workbook.id, p_role_codes: flowRoleCodes })
+    if (flowError) setFormError('The reporting flow could not be saved. Run supabase/manual-apply/09_reporting_flow.sql in Supabase first.')
+    else { setNotice('Reporting flow saved for this workbook. Visibility and completion notices now follow it.'); await mutate() }
+    setPending(false)
   }
 
   async function notifyAssignees(recipientId?: string) {
@@ -169,6 +186,13 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     <section className="card card-pad">
       <div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Workbook settings</h2><p>Update the name and lifecycle status.</p></div><span className="status-pill" data-tone={workbook.status === 'closed' ? 'neutral' : workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{workbook.status}</span></div>
       <form onSubmit={saveWorkbook}><div className="form-grid"><div className="form-field"><label htmlFor="edit-name">Workbook name</label><input id="edit-name" value={editName || workbook.name} onChange={(event) => setEditName(event.target.value)} maxLength={120} /></div><div className="form-field"><label htmlFor="edit-status">Status</label><select id="edit-status" value={editStatus || workbook.status} onChange={(event) => setEditStatus(event.target.value)}><option value="active">Active</option><option value="ongoing">Ongoing</option><option value="closed">Closed</option></select></div></div><div className="form-actions"><button className="primary-button" disabled={pending}>{pending ? <LoaderCircle className="animate-spin" /> : <Save />} Save workbook</button></div></form>
+    </section>
+    <section className="card section-card">
+      <div className="section-head"><div><h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><GitBranch size={17} /> Reporting & notification flow</h2><p>This workbook's own flow. Lowest role first; each step sees every column below it and completion emails go to the next step up. Changing this does not change the template.</p></div><button className="primary-button" onClick={() => void saveFlow()} disabled={pending}><Save /> Save flow</button></div>
+      <div style={{ padding: '0 16px 16px' }}>
+        <ReportingFlowEditor value={flowRoleCodes} onChange={setFlowRoleCodes} roles={data.roles} disabled={pending} emptyHint="No flow set for this workbook. It falls back to each person's Reports to links." />
+        <div className="notice" style={{ marginTop: 14 }}><GitBranch /> Completing work notifies the next role up this chain. Head office sees every column regardless of its position.</div>
+      </div>
     </section>
     <section className="card section-card"><div className="section-head"><div><h2>Move leads to your team</h2><p>{selectedLeadIds.length ? `${selectedLeadIds.length} leads selected` : 'Select rows below, or leave empty to assign every lead.'} Each selected lead receives a separate assignment for every chosen person, and re-running this only adds people who do not already have it.</p></div><button className="primary-button" onClick={assignSelected} disabled={pending || !assigneeIds.length || !data.leads.length}>{pending ? <LoaderCircle className="animate-spin" /> : <Send />} Assign leads</button></div>
       {assignablePeople.length ? <div className="toolbar-row" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>{assignablePeople.map((person) => { const order = assigneeIds.indexOf(person.id); const selected = order >= 0; return <label key={person.id} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px', border: `1px solid ${selected ? '#e7a9b2' : 'var(--border)'}`, background: selected ? '#fffafb' : '#fff', borderRadius: 8, cursor: 'pointer' }}><input type="checkbox" checked={selected} onChange={() => toggleAssignee(person.id)} /><span style={{ width: 18, height: 18, borderRadius: '50%', display: 'grid', placeItems: 'center', background: selected ? '#c8102e' : '#f3eef0', color: selected ? '#fff' : '#8a8083', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{selected ? order + 1 : '·'}</span><span style={{ fontSize: 11, fontWeight: 600 }}>{person.full_name}</span><span className="form-hint">{roleLabels.get(person.role_code) ?? person.role_code}</span></label>})}</div> : <div className="toolbar-row"><span className="form-hint">No active assignees available. Add users from People & access.</span></div>}

@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx'
 import { ArrowLeft, Check, FileSpreadsheet, LoaderCircle, Pencil, Search, Send, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-type Field = { id: string; template_id: string; field_key: string; label: string; field_kind: 'source' | 'user'; owner_role_code: string | null; owner_profile_id: string | null; input_type: string; options: string[]; is_required: boolean; sort_order: number }
+type Field = { id: string; template_id: string | null; field_key: string; label: string; field_kind: 'source' | 'user'; owner_role_code: string | null; owner_profile_id: string | null; input_type: string; options: string[]; is_required: boolean; sort_order: number }
 type Assignment = { id: string; lead_id: string; assigned_to: string; role_code: string; status: 'assigned' | 'completed'; assigned_at: string; completed_at: string | null; assignment_field_values: Array<{ field_id: string; value: unknown; updated_at: string }> }
 type Lead = { id: string; row_number: number; source_values: Record<string, string | number | boolean | null> }
 type Person = { id: string; full_name: string; role_code: string; manager_id: string | null }
@@ -17,9 +17,9 @@ type DetailData = { userId: string; profile: Person; roles: Array<{ role_code: s
 const supabase = createClient()
 
 async function loadFields(templateId: string) {
-  const full = await supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order').eq('template_id', templateId).order('sort_order')
+  const full = await supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
   if (!full.error) return full
-  return supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,input_type,options,is_required,sort_order').eq('template_id', templateId).order('sort_order')
+  return supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
 }
 
 async function loadDetail(workbookId: string): Promise<DetailData> {

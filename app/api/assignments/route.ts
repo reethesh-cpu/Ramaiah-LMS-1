@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getHeadOfficeActor } from '@/lib/crm/server-auth'
+import { mergeFlowRoles } from '@/lib/crm/reporting-flow'
 
 // PostgREST puts filters in the URL, so a request with 5,000 UUIDs is far too
 // long. Every lookup and write below is chunked to stay well under the limit.
@@ -19,10 +20,14 @@ export async function POST(request: Request) {
   const admin = createAdminClient()
 
   const foundLeadIds = new Set<string>()
+  const leadWorkbooks = new Map<string, string>()
   for (let offset = 0; offset < leadIds.length; offset += CHUNK_SIZE) {
-    const { data, error } = await admin.from('lead_records').select('id').in('id', leadIds.slice(offset, offset + CHUNK_SIZE))
+    const { data, error } = await admin.from('lead_records').select('id,workbook_id').in('id', leadIds.slice(offset, offset + CHUNK_SIZE))
     if (error) return NextResponse.json({ error: 'The selected leads could not be checked. Please retry.' }, { status: 500 })
-    for (const row of data ?? []) foundLeadIds.add(row.id)
+    for (const row of data ?? []) {
+      foundLeadIds.add(row.id)
+      leadWorkbooks.set(row.id, row.workbook_id)
+    }
   }
 
   const { data: people, error: peopleError } = await admin.from('profiles').select('id,role_code,is_active').in('id', assigneeIds)
@@ -33,6 +38,28 @@ export async function POST(request: Request) {
 
   const roles = new Map((people ?? []).map((person) => [person.id, person.role_code]))
   const rows = leadIds.flatMap((lead_id) => assigneeIds.map((assigned_to) => ({ lead_id, assigned_to, assigned_by: actor.user.id, role_code: roles.get(assigned_to) })))
+
+  // If a workbook already has a reporting flow, a newly assigned person's role
+  // must appear in it. Otherwise nobody above them would see their column.
+  const workbookIds = [...new Set(leadWorkbooks.values())]
+  const { data: flowSteps } = await admin
+    .from('workbook_reporting_steps').select('workbook_id,role_code,step_order').in('workbook_id', workbookIds)
+  const assignedRoleCodes = [...new Set(rows.map((row) => row.role_code))]
+  for (const workbookId of workbookIds) {
+    const existing = (flowSteps ?? [])
+      .filter((step) => step.workbook_id === workbookId)
+      .sort((a, b) => a.step_order - b.step_order)
+      .map((step) => step.role_code)
+    // Workbooks without a flow keep using the Reports to fallback untouched.
+    if (!existing.length) continue
+    const merged = mergeFlowRoles(existing, assignedRoleCodes)
+    if (merged.length === existing.length) continue
+    const { error: deleteError } = await admin.from('workbook_reporting_steps').delete().eq('workbook_id', workbookId)
+    if (deleteError) continue
+    await admin.from('workbook_reporting_steps').insert(
+      merged.map((role_code, index) => ({ workbook_id: workbookId, role_code, step_order: index + 1 })),
+    )
+  }
 
   // Re-assigning a lead to someone who already has it used to violate the
   // (lead_id, assigned_to) unique constraint. Insert with ignore-duplicates and

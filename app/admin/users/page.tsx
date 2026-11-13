@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { KeyRound, LoaderCircle, Plus, ShieldCheck, UserCheck, UserPlus, UserX, UsersRound } from 'lucide-react'
+import { KeyRound, LoaderCircle, Plus, ShieldCheck, UserCheck, UserPlus, UserX, UsersRound, GitBranch } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 type Role = { role_code: string; label: string; is_system: boolean }
@@ -111,8 +111,9 @@ export default function UsersPage() {
   }
 
   return <>
-    <div className="page-heading"><div><div className="kicker">Organization access</div><h1>People & roles</h1><p>Create accounts, set reporting lines, and manage active access.</p></div><button className="primary-button" type="button" onClick={() => setShowCreate((value) => !value)}><UserPlus /> Add a person</button></div>
+    <div className="page-heading"><div><div className="kicker">Organization access</div><h1>People & roles</h1><p>Create accounts, set fallback reporting lines, and manage active access.</p></div><button className="primary-button" type="button" onClick={() => setShowCreate((value) => !value)}><UserPlus /> Add a person</button></div>
     {(notice || formError || error) && <div className="notice" data-tone={formError || error ? 'error' : undefined} role={formError || error ? 'alert' : 'status'}>{formError || error?.message || notice}</div>}
+    <div className="notice"><GitBranch /> Reporting is now controlled per workbook by its role flow. These <strong>Reports to</strong> links are only used by workbooks that do not have a flow yet.</div>
     {showCreate && <section className="card card-pad" style={{ marginBottom: 18 }}><div className="section-head" style={{ padding: '0 0 16px', marginBottom: 18 }}><div><h2>Create an account</h2><p>Role and reporting lines control which work and team updates are visible.</p></div></div><form onSubmit={createUser}><div className="form-grid">
       <div className="form-field"><label htmlFor="full_name">Full name</label><input id="full_name" name="full_name" autoComplete="name" required maxLength={120} /></div>
       <div className="form-field"><label htmlFor="email">Work email</label><input id="email" name="email" type="email" autoComplete="email" required /></div>
