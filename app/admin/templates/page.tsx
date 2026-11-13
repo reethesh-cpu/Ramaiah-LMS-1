@@ -55,12 +55,15 @@ export default function TemplatesPage() {
   const userColumnCount = fields.length - sourceFields.length
   const categoryName = data?.categories.find((category) => category.id === currentTemplate?.category_id)?.name
 
+  const savedFlowKey = useMemo(() => (data?.steps ?? [])
+    .filter((step) => step.template_id === currentId)
+    .sort((a, b) => a.step_order - b.step_order)
+    .map((step) => step.role_code)
+    .join('|'), [currentId, data?.steps])
+
   useEffect(() => {
-    const steps = (data?.steps ?? [])
-      .filter((step) => step.template_id === currentId)
-      .sort((a, b) => a.step_order - b.step_order)
-    setFlowDraft(steps.map((step) => step.role_code))
-  }, [currentId, data?.steps])
+    setFlowDraft(savedFlowKey ? savedFlowKey.split('|') : [])
+  }, [savedFlowKey])
 
   async function createTemplate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setFormError(''); setMessage('')

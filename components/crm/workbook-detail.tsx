@@ -81,9 +81,14 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     return groups
   }, [data?.assignments])
 
+  const savedFlowKey = useMemo(() => [...(data?.steps ?? [])]
+    .sort((a, b) => a.step_order - b.step_order)
+    .map((step) => step.role_code)
+    .join('|'), [data?.steps])
+
   useEffect(() => {
-    setFlowRoleCodes([...(data?.steps ?? [])].sort((a, b) => a.step_order - b.step_order).map((step) => step.role_code))
-  }, [data?.steps])
+    setFlowRoleCodes(savedFlowKey ? savedFlowKey.split('|') : [])
+  }, [savedFlowKey])
 
   async function saveWorkbook(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!workbook) return

@@ -8,6 +8,7 @@ const ROLE_RANK: Record<string, number> = {
   telecaller: 10,
   team_member: 20,
   agm: 30,
+  finance_manager: 35,
   hr: 40,
   ceo: 50,
   head_office: 60,
