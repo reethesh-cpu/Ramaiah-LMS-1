@@ -47,7 +47,12 @@ export default function TemplatesPage() {
   const [formError, setFormError] = useState('')
   const [dragId, setDragId] = useState('')
   const [flowDraft, setFlowDraft] = useState<string[]>([])
+  const [newFlow, setNewFlow] = useState<string[]>([])
   const templates = data?.templates ?? []
+  const defaultNewFlow = useMemo(() => {
+    const available = new Set((data?.roles ?? []).map((role) => role.role_code))
+    return ['telecaller', 'agm', 'hr', 'ceo', 'head_office'].filter((roleCode) => available.has(roleCode))
+  }, [data?.roles])
   const currentId = selectedId || templates[0]?.id || ''
   const currentTemplate = templates.find((template) => template.id === currentId)
   const fields = useMemo(() => (data?.fields ?? []).filter((field) => field.template_id === currentId), [data?.fields, currentId])
@@ -71,7 +76,15 @@ export default function TemplatesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: template, error: insertError } = await supabase.from('templates').insert({ name: String(form.get('name')).trim(), description: String(form.get('description') ?? '').trim() || null, category_id: String(form.get('category_id') ?? '') || null, created_by: user?.id }).select('id').single()
     if (insertError || !template) setFormError('Template could not be created. Check that the name is unique for this category.')
-    else { setMessage('Template created. Add the workbook headers it should contain.'); setSelectedId(template.id); setShowCreate(false); await mutate() }
+    else {
+      let flowWarning = ''
+      if (newFlow.length) {
+        const { error: flowError } = await supabase.rpc('set_template_reporting_steps', { p_template_id: template.id, p_role_codes: newFlow })
+        if (flowError) flowWarning = ' The reporting flow was not saved — run supabase/manual-apply/09_reporting_flow.sql in Supabase.'
+      }
+      setMessage(`Template created. Add the workbook headers it should contain.${flowWarning}`)
+      setSelectedId(template.id); setShowCreate(false); await mutate()
+    }
     setSaving(false)
   }
 
@@ -129,9 +142,15 @@ export default function TemplatesPage() {
   }
 
   return <>
-    <div className="page-heading"><div><div className="kicker">Workbook structure</div><h1>Templates & headers</h1><p>Design reusable workbook headers and drag them into the order you need.</p></div><button className="primary-button" type="button" onClick={() => setShowCreate((value) => !value)}><Plus /> New template</button></div>
+    <div className="page-heading"><div><div className="kicker">Workbook structure</div><h1>Templates & headers</h1><p>Design reusable workbook headers and drag them into the order you need.</p></div><button className="primary-button" type="button" onClick={() => { setShowCreate((value) => !value); setNewFlow(defaultNewFlow) }}><Plus /> New template</button></div>
     {(message || formError || error) && <div className="notice" data-tone={formError || error ? 'error' : undefined} role={formError || error ? 'alert' : 'status'}>{formError || error?.message || message}</div>}
-    {showCreate && <section className="card card-pad" style={{ marginBottom: 18 }}><form onSubmit={createTemplate}><div className="form-grid"><div className="form-field"><label htmlFor="template-name">Template name</label><input id="template-name" name="name" required maxLength={100} /></div><div className="form-field"><label htmlFor="template-category">Category</label><select id="template-category" name="category_id" defaultValue=""><option value="">Available to all categories</option>{data?.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div><div className="form-field full"><label htmlFor="template-description">Description</label><input id="template-description" name="description" maxLength={240} /></div></div><div className="form-actions"><button className="secondary-button" type="button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? <LoaderCircle className="animate-spin" /> : <Plus />} Create template</button></div></form></section>}
+    {showCreate && <section className="card card-pad" style={{ marginBottom: 18 }}><form onSubmit={createTemplate}><div className="form-grid"><div className="form-field"><label htmlFor="template-name">Template name</label><input id="template-name" name="name" required maxLength={100} /></div><div className="form-field"><label htmlFor="template-category">Category</label><select id="template-category" name="category_id" defaultValue=""><option value="">Available to all categories</option>{data?.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div><div className="form-field full"><label htmlFor="template-description">Description</label><input id="template-description" name="description" maxLength={240} /></div></div>
+      <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+        <div className="section-head" style={{ padding: '0 0 12px' }}><div><h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}><GitBranch size={17} /> Reporting & notification flow</h3><p style={{ margin: '5px 0 0' }}>Add the reporting levels for this template, lowest first — for example telecaller → AGM → HR → CEO → head office. Each level sees the columns below it, and completion notices move one level up.</p></div></div>
+        {!data?.flowReady && <div className="notice" data-tone="error" style={{ marginBottom: 12 }}>Run <code>supabase/manual-apply/09_reporting_flow.sql</code> in the Supabase SQL Editor to enable reporting flows.</div>}
+        <ReportingFlowEditor value={newFlow} onChange={setNewFlow} roles={data?.roles ?? []} disabled={saving || !data?.flowReady} emptyHint="No reporting levels yet. Workbooks made from this template will fall back to Reports to links." />
+      </div>
+      <div className="form-actions"><button className="secondary-button" type="button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? <LoaderCircle className="animate-spin" /> : <Plus />} Create template</button></div></form></section>}
     <section className="card section-card" style={{ marginTop: 0 }}>
       <div className="section-head"><div><h2>Workbook templates</h2><p>Choose a template to edit and reorder its uploaded-data headers.</p></div><div className="toolbar-actions">{templates.length > 0 && <select aria-label="Select template" value={currentId} onChange={(event) => { setSelectedId(event.target.value); setMessage(''); setFormError('') }} style={{ minHeight: 36, border: '1px solid var(--border)', borderRadius: 8, padding: '0 10px', background: '#fff', color: '#3a3436', fontSize: 12 }}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>}</div></div>
       {isLoading ? <div className="empty-state"><LoaderCircle className="animate-spin" /></div> : !templates.length ? <div className="empty-state"><span className="empty-icon"><Layers3 /></span><h3>No templates yet</h3><p>Create a template, then add the workbook headers your team imports.</p><button className="secondary-button" style={{ marginTop: 15 }} onClick={() => setShowCreate(true)}><Plus /> Create a template</button></div> : <>
