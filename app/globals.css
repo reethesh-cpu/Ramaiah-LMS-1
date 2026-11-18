@@ -118,6 +118,9 @@ button { cursor: pointer; }
 .data-table td.wrap-cell { white-space: normal; min-width: 120px; max-width: 220px; }
 .data-table tbody tr:nth-child(even) td { background: #faf8f9; }
 .data-table tbody tr:hover td { background: #fff5f6; }
+.row-actions { display: flex; align-items: center; gap: 4px; }
+.row-actions .quiet-button, .row-actions .danger-button { min-height: 28px; padding: 0 8px; gap: 5px; font-size: 11px; }
+.row-actions .quiet-button svg, .row-actions .danger-button svg { width: 12px; height: 12px; }
 .data-table input, .data-table select, .data-table textarea { width: 100%; min-width: 80px; border: 1px solid #ddd6d7; border-radius: 4px; padding: 4px 6px; background: #fff; font-size: 12px; color: #3d3a3c; box-sizing: border-box; }
 .data-table input:hover, .data-table select:hover, .data-table textarea:hover { border-color: #bfb6b8; }
 .data-table input:focus, .data-table select:focus, .data-table textarea:focus { border-color: #c8102e; outline: none; box-shadow: 0 0 0 2px rgba(200,16,46,.1); }
