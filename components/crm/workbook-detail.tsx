@@ -180,7 +180,9 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     const notifyRes = await fetch('/api/notifications/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbook_id: workbook.id, ...(recipientId ? { recipient_id: recipientId } : {}) }) })
     const notifyResult = await notifyRes.json().catch(() => ({}))
     if (!notifyRes.ok) { setFormError(notifyResult.error ?? 'Notifications could not be created.'); setNotifyPending(false); return }
-    const sendRes = await fetch('/api/notifications/send', { method: 'POST' })
+    const ids = Array.isArray(notifyResult.ids) ? notifyResult.ids : []
+    if (!ids.length) { setNotice(`${notifyResult.notified_count ?? 0} notification${notifyResult.notified_count === 1 ? '' : 's'} created, but none were queued for sending.`); setNotifyPending(false); return }
+    const sendRes = await fetch('/api/notifications/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
     const sendResult = await sendRes.json().catch(() => ({}))
     if (!sendRes.ok) { setNotice(`${notifyResult.notified_count} notification${notifyResult.notified_count === 1 ? '' : 's'} created. Gmail sending is not yet configured — connect a Gmail account to deliver them.`); setNotifyPending(false); return }
     setNotice(`${notifyResult.notified_count} notification${notifyResult.notified_count === 1 ? '' : 's'} created. ${sendResult.sent ?? 0} email${sendResult.sent === 1 ? '' : 's'} sent${sendResult.failed ? `, ${sendResult.failed} failed` : ''}.`)

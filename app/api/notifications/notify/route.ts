@@ -99,11 +99,16 @@ export async function POST(request: Request) {
   }))
 
   let inserted = 0
+  const outboxIds: string[] = []
   for (let i = 0; i < rows.length; i += CHUNK) {
     const { data, error } = await admin.from('notification_outbox').insert(rows.slice(i, i + CHUNK)).select('id')
     if (error) return NextResponse.json({ error: 'Notifications could not be created.' }, { status: 500 })
     inserted += data?.length ?? 0
+    for (const row of data ?? []) outboxIds.push(row.id)
   }
 
-  return NextResponse.json({ notified_count: inserted, recipients: recipients.length }, { status: 201 })
+  // Return the exact rows just queued so the send step can deliver only these.
+  // Sending every pending outbox row would also deliver unrelated notifications
+  // (other workbooks, assignments, earlier clicks) from other people's actions.
+  return NextResponse.json({ notified_count: inserted, recipients: recipients.length, ids: outboxIds }, { status: 201 })
 }

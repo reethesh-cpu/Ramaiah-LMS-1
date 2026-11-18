@@ -5,25 +5,31 @@ import { refreshAccessToken, isGmailConfigured, getGmailCredentials } from '@/li
 import { sendWithGoogleMailApi } from '@/lib/notifications/gmail-api'
 
 // POST /api/notifications/send
-// Processes pending notifications in the outbox.
+// Delivers only the outbox rows created by the immediately preceding notify
+// request. Without an explicit ID list this would send every pending row in the
+// table, including notifications queued for other workbooks or earlier clicks.
 // For each entry: try the sender's Gmail (if connected and opted in),
 // then fall back to the first head-office user's Gmail,
 // then give up and mark as failed.
-export async function POST() {
+export async function POST(request: Request) {
   const actor = await getHeadOfficeActor()
   if (actor.error) return NextResponse.json({ error: actor.error }, { status: actor.error === 'unauthorized' ? 401 : 403 })
+
+  const body = await request.json().catch(() => null) as null | { ids?: unknown }
+  const ids = Array.isArray(body?.ids) ? body!.ids.filter((id): id is string => typeof id === 'string' && Boolean(id)) : []
+  if (!ids.length) return NextResponse.json({ error: 'No notification IDs were supplied to send.' }, { status: 400 })
 
   if (!isGmailConfigured()) return NextResponse.json({ error: 'Gmail OAuth is not configured. Set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in .env.local and connect at least one Gmail account.' }, { status: 400 })
 
   const admin = createAdminClient()
 
-  // Fetch pending notifications with sender info.
+  // Fetch only the notifications just queued by the notify request.
   const { data: pending, error } = await admin
     .from('notification_outbox')
     .select('id,recipient_email,subject,body,sender_id')
     .eq('delivery_status', 'pending')
+    .in('id', ids)
     .order('created_at', { ascending: true })
-    .range(0, 49)
 
   if (error) return NextResponse.json({ error: 'The outbox could not be read.' }, { status: 500 })
   if (!pending?.length) return NextResponse.json({ sent: 0, failed: 0, message: 'No pending notifications.' })
