@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createPortal } from 'react-dom'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
-import { ArrowLeft, Bell, Check, Download, Flag, GitBranch, LoaderCircle, Mail, Save, Send, UserRoundPlus } from 'lucide-react'
+import { ArrowLeft, Bell, Check, ChevronDown, Download, Flag, GitBranch, LoaderCircle, Mail, Save, Send, UserRoundPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 
@@ -56,6 +57,8 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
   const [notifyPending, setNotifyPending] = useState(false)
   const [notice, setNotice] = useState('')
   const [formError, setFormError] = useState('')
+  const [openAssigneeLead, setOpenAssigneeLead] = useState<string | null>(null)
+  const [assigneeMenu, setAssigneeMenu] = useState<{ top: number; left: number; above: boolean } | null>(null)
   const workbook = data?.workbook
   const sourceFields = useMemo(() => data?.fields.filter((field) => field.field_kind === 'source') ?? [], [data?.fields])
   const roleLabels = new Map((data?.roles ?? []).map((role) => [role.role_code, role.label]))
@@ -93,6 +96,39 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
         return aIndex - bIndex || a.full_name.localeCompare(b.full_name)
       })
   }, [data?.people, flowStepByRole])
+  // The assignee list is a small popover so a row stays one line tall. Close it
+  // on outside click, Escape, or any scroll/resize that would leave it floating.
+  useEffect(() => {
+    if (!openAssigneeLead) return
+    const close = () => setOpenAssigneeLead(null)
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (target.closest('[data-assignee-menu]') || target.closest('[data-assignee-trigger]')) return
+      close()
+    }
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [openAssigneeLead])
+
+  function toggleAssigneeMenu(leadId: string, event: ReactMouseEvent<HTMLButtonElement>) {
+    if (openAssigneeLead === leadId) { setOpenAssigneeLead(null); return }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const width = 286
+    const left = Math.min(Math.max(8, rect.right - width), Math.max(8, window.innerWidth - width - 8))
+    const above = rect.bottom + 300 > window.innerHeight && rect.top > 300
+    setAssigneeMenu({ top: above ? rect.top - 6 : rect.bottom + 6, left, above })
+    setOpenAssigneeLead(leadId)
+  }
+
   function ownerLabelFor(field: Field) {
     if (field.owner_profile_id) return personById.get(field.owner_profile_id)?.full_name ?? 'Team member'
     return roleLabels.get(field.owner_role_code ?? '') ?? field.owner_role_code ?? 'Team'
@@ -227,7 +263,9 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
       {assigneeIds.length ? <div className="notice" style={{ margin: '12px 16px 16px' }}><Send /> <span><strong>Hand-off chain:</strong> {assigneeIds.map((id, index) => { const person = personById.get(id); const roleCode = person?.role_code ?? ''; return <span key={id}>{index > 0 ? ' → ' : ''}{person?.full_name ?? 'Team member'} ({roleLabels.get(roleCode) ?? roleCode} · {flowStepByRole.has(roleCode) ? `level ${flowStepByRole.get(roleCode)}` : 'level added on save'})</span> })}</span></div> : null}
     </section>
     <section className="card section-card"><div className="section-head"><div><h2>Lead records</h2><p>Imported source data remains read-only for assignees. Head office can edit source values. Team columns appear only for people in this workbook's flow or assigned work here.</p></div><span className="status-pill">{data.leads.length.toLocaleString()} rows</span></div>
-      {!data.leads.length ? <div className="empty-state"><h3>This workbook has no records</h3><p>Upload a CSV or Excel file to populate the workbook.</p></div> : <div className="table-wrap"><table className="data-table"><thead><tr><th><input type="checkbox" aria-label="Select all leads" checked={allSelected} onChange={() => setSelectedLeadIds(allSelected ? [] : data.leads.map((lead) => lead.id))} /></th><th>Row</th>{sourceFields.map((field) => <th key={field.id}>{field.label}</th>)}{userFields.map((field) => <th key={field.id}>{ownerLabelFor(field)} · {field.label}</th>)}<th>Assigned team</th></tr></thead><tbody>{data.leads.map((lead) => { const assignments = assignmentsByLead.get(lead.id) ?? []; return <tr key={lead.id}><td><input type="checkbox" aria-label={`Select lead row ${lead.row_number}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLead(lead.id)} /></td><td>{lead.row_number}</td>{sourceFields.map((field) => { const key = `${lead.id}:${field.field_key}`; const value = drafts[key] ?? String(lead.source_values[field.field_key] ?? ''); return <td key={field.id}><input aria-label={`Row ${lead.row_number} ${field.label}`} value={value} type={field.input_type === 'date' ? 'date' : field.input_type === 'number' ? 'number' : 'text'} onChange={(event) => setDrafts((current) => ({ ...current, [key]: event.target.value }))} onBlur={() => void saveSourceValue(lead, field)} style={{ minWidth: 70, fontSize: 12 }} /></td>})}{userFields.map((field) => { const ownerAssignment = field.owner_profile_id ? assignments.find((item) => item.assigned_to === field.owner_profile_id) : [...assignments].find((item) => item.role_code === field.owner_role_code && item.assignment_field_values?.some((value) => value.field_id === field.id)) ?? assignments.find((item) => item.role_code === field.owner_role_code); const value = ownerAssignment?.assignment_field_values.find((item) => item.field_id === field.id)?.value; return <td key={field.id}>{value == null || value === '' ? '—' : String(value)}</td> })}<td className="wrap-cell">{assignments.length ? assignments.map((assignment) => <div key={assignment.id} style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}><span className="status-pill" data-tone={assignment.status === 'completed' ? 'neutral' : undefined}>{personById.get(assignment.assigned_to)?.full_name ?? 'Team member'} · {roleLabels.get(assignment.role_code) ?? assignment.role_code} · {levelLabelFor(assignment.role_code)} · {assignment.status}</span><button className="secondary-button" style={{ padding: '2px 6px', fontSize: 11, gap: 3 }} disabled={notifyPending} onClick={() => notifyAssignees(assignment.assigned_to)} title={`Notify ${personById.get(assignment.assigned_to)?.full_name ?? 'user'}`}><Mail size={11} /></button></div>) : <span className="form-hint">Unassigned</span>}</td></tr>})}</tbody></table></div>}
+      {!data.leads.length ? <div className="empty-state"><h3>This workbook has no records</h3><p>Upload a CSV or Excel file to populate the workbook.</p></div> : <div className="table-wrap"><table className="data-table"><thead><tr><th><input type="checkbox" aria-label="Select all leads" checked={allSelected} onChange={() => setSelectedLeadIds(allSelected ? [] : data.leads.map((lead) => lead.id))} /></th><th>Row</th>{sourceFields.map((field) => <th key={field.id}>{field.label}</th>)}{userFields.map((field) => <th key={field.id}>{ownerLabelFor(field)} · {field.label}</th>)}<th>Assigned team</th></tr></thead><tbody>{data.leads.map((lead) => { const assignments = assignmentsByLead.get(lead.id) ?? []; return <tr key={lead.id}><td><input type="checkbox" aria-label={`Select lead row ${lead.row_number}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLead(lead.id)} /></td><td>{lead.row_number}</td>{sourceFields.map((field) => { const key = `${lead.id}:${field.field_key}`; const value = drafts[key] ?? String(lead.source_values[field.field_key] ?? ''); return <td key={field.id}><input aria-label={`Row ${lead.row_number} ${field.label}`} value={value} type={field.input_type === 'date' ? 'date' : field.input_type === 'number' ? 'number' : 'text'} onChange={(event) => setDrafts((current) => ({ ...current, [key]: event.target.value }))} onBlur={() => void saveSourceValue(lead, field)} style={{ minWidth: 70, fontSize: 12 }} /></td>})}{userFields.map((field) => { const ownerAssignment = field.owner_profile_id ? assignments.find((item) => item.assigned_to === field.owner_profile_id) : [...assignments].find((item) => item.role_code === field.owner_role_code && item.assignment_field_values?.some((value) => value.field_id === field.id)) ?? assignments.find((item) => item.role_code === field.owner_role_code); const value = ownerAssignment?.assignment_field_values.find((item) => item.field_id === field.id)?.value; return <td key={field.id}>{value == null || value === '' ? '—' : String(value)}</td> })}<td>{assignments.length ? <button type="button" className="assignee-trigger" data-assignee-trigger aria-expanded={openAssigneeLead === lead.id} aria-label={`View ${assignments.length} assignees for row ${lead.row_number}`} onClick={(event) => toggleAssigneeMenu(lead.id, event)}><span className="status-dot" style={{ color: assignments.some((item) => item.status === 'assigned') ? '#c8102e' : '#6b6467' }} />{assignments.length} assigned<ChevronDown size={12} /></button> : <span className="form-hint">Unassigned</span>}
+          {openAssigneeLead === lead.id && assigneeMenu && createPortal(<div className="assignee-menu" data-assignee-menu style={{ top: assigneeMenu.top, left: assigneeMenu.left, transform: assigneeMenu.above ? 'translateY(-100%)' : undefined }}><div className="assignee-menu-head">Assigned team · row {lead.row_number}</div>{assignments.map((assignment) => { const name = personById.get(assignment.assigned_to)?.full_name ?? 'Team member'; return <div key={assignment.id} className="assignee-menu-row"><span className="status-dot" style={{ color: assignment.status === 'completed' ? '#6b6467' : '#c8102e', flex: '0 0 auto' }} /><div style={{ minWidth: 0, flex: 1 }}><div style={{ fontWeight: 650, fontSize: 11 }}>{name}</div><div className="form-hint">{roleLabels.get(assignment.role_code) ?? assignment.role_code} · {levelLabelFor(assignment.role_code)} · {assignment.status}</div></div><button type="button" className="quiet-button" disabled={notifyPending} onClick={() => { void notifyAssignees(assignment.assigned_to); setOpenAssigneeLead(null) }} title={`Email ${name}`}><Mail size={12} /> Email</button></div> })}</div>, document.body)}
+        </td></tr>})}</tbody></table></div>}
     </section>
     {data.assignments.some((assignment) => assignment.assignment_field_values?.length) && <section className="card section-card"><div className="section-head"><div><h2>Team updates</h2><p>Role-specific values are visible according to the reporting hierarchy.</p></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Lead row</th><th>Team member</th><th>Role</th><th>Flow level</th><th>Status</th><th>Submitted fields</th><th>Last update</th></tr></thead><tbody>{data.assignments.filter((assignment) => assignment.assignment_field_values?.length).map((assignment) => <tr key={assignment.id}><td>{data.leads.find((lead) => lead.id === assignment.lead_id)?.row_number ?? '—'}</td><td>{personById.get(assignment.assigned_to)?.full_name ?? 'Team member'}</td><td>{roleLabels.get(assignment.role_code) ?? assignment.role_code}</td><td>{levelLabelFor(assignment.role_code)}</td><td>{assignment.status}</td><td>{assignment.assignment_field_values.map((value) => { const field = data.fields.find((item) => item.id === value.field_id); return field ? `${ownerLabelFor(field)} · ${field.label}: ${String(value.value ?? '')}` : '' }).filter(Boolean).join(' · ')}</td><td>{new Date(assignment.assignment_field_values[0].updated_at).toLocaleString()}</td></tr>)}</tbody></table></div></section>}
     <div className="notice"><Check /> Assignment notifications are recorded in the Supabase outbox. Google Mail API delivery will begin once its sender credential is connected; no third-party mail sender is used.</div>
