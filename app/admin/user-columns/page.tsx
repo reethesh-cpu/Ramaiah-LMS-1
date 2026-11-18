@@ -5,6 +5,7 @@ import { FormEvent, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { Columns3, LoaderCircle, Plus, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { fieldKeyFromLabel } from '@/lib/crm/field-keys'
 
 type Template = { id: string; name: string }
 type Person = { id: string; full_name: string; role_code: string; is_active: boolean }
@@ -28,10 +29,6 @@ async function loadData() {
     people: (peopleResult.data ?? []) as Person[],
     roles: (rolesResult.data ?? []) as Role[],
   }
-}
-
-function keyFromLabel(label: string) {
-  return label.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 70)
 }
 
 function uniqueKey(base: string, existing: Set<string>) {
@@ -81,7 +78,7 @@ export default function UserColumnsPage() {
     if (type === 'dropdown' && !options.length) { setFormError('Add at least one dropdown option.'); setSaving(false); return }
 
     const globalForOwner = fields.filter((field) => field.template_id === null && field.owner_profile_id === ownerId)
-    const fieldKey = uniqueKey(keyFromLabel(label), new Set(globalForOwner.map((field) => field.field_key)))
+    const fieldKey = uniqueKey(fieldKeyFromLabel(label, 70), new Set(globalForOwner.map((field) => field.field_key)))
     const nextOrder = fields.reduce((max, field) => Math.max(max, field.sort_order + 1), 0)
     const { error: insertError } = await supabase.from('template_fields').insert({
       template_id: null,

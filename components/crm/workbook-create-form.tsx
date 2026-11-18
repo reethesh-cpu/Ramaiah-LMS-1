@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx'
 import { ArrowLeft, ArrowRight, Check, CircleAlert, FileSpreadsheet, GitBranch, LoaderCircle, Upload, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { mergeFlowRoles } from '@/lib/crm/reporting-flow'
+import { normalizeHeader } from '@/lib/crm/field-keys'
 import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 
 type Category = { id: string; name: string }
@@ -30,8 +31,6 @@ async function loadOptions() {
   if (categories.error || templates.error || fields.error || people.error || roles.error) throw new Error('Workbook setup options could not be loaded.')
   return { categories: (categories.data ?? []) as Category[], templates: (templates.data ?? []) as Template[], fields: (fields.data ?? []) as Field[], people: (people.data ?? []) as Person[], roles: roles.data ?? [], steps: (steps.data ?? []) as Step[], flowReady: !steps.error }
 }
-
-function normalize(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, '') }
 
 export function WorkbookCreateForm() {
   const router = useRouter()
@@ -83,7 +82,7 @@ export function WorkbookCreateForm() {
     const fields = (data?.fields ?? []).filter((field) => field.template_id === currentTemplateId && field.field_kind === 'source')
     const next: Record<string, string> = {}
     for (const header of fileHeaders) {
-      const match = fields.find((field) => normalize(field.label) === normalize(header) || normalize(field.field_key) === normalize(header))
+      const match = fields.find((field) => normalizeHeader(field.label) === normalizeHeader(header) || normalizeHeader(field.field_key) === normalizeHeader(header))
       next[header] = match?.field_key ?? ''
     }
     return next
