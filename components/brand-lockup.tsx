@@ -1,5 +1,5 @@
 import Image from 'next/image'
-import Link from 'next/link'
+import { TransitionLink as Link } from '@/components/crm/route-transition'
 
 type BrandLockupProps = {
   href?: string

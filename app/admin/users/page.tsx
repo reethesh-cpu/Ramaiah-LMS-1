@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, useMemo, useState } from 'react'
-import Link from 'next/link'
+import { TransitionLink as Link } from '@/components/crm/route-transition'
 import useSWR from 'swr'
 import { KeyRound, LoaderCircle, Plus, ShieldCheck, UserCheck, UserPlus, UserX, GitBranch } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'

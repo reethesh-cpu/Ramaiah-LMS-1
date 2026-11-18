@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import { TransitionLink as Link } from '@/components/crm/route-transition'
 import { useParams } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'

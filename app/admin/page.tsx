@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { TransitionLink as Link } from '@/components/crm/route-transition'
 import { ArrowRight, BriefcaseBusiness, CircleCheck, FileSpreadsheet, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 

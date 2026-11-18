@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import { TransitionLink as Link } from '@/components/crm/route-transition'
 import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { ArrowDown, ArrowUp, Columns3, GitBranch, GripVertical, Layers3, LoaderCircle, Plus, Save } from 'lucide-react'

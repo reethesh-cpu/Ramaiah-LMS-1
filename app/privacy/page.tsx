@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { TransitionLink as Link } from '@/components/crm/route-transition'
 import type { Metadata } from 'next'
 import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { BrandLockup } from '@/components/brand-lockup'
