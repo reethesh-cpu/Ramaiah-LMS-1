@@ -3,33 +3,37 @@
 import { TransitionLink as Link } from '@/components/crm/route-transition'
 import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { ArrowDown, ArrowUp, Columns3, GitBranch, GripVertical, Layers3, LoaderCircle, Plus, Save } from 'lucide-react'
+import { ArrowDown, ArrowUp, Columns3, FileSpreadsheet, GitBranch, GripVertical, Layers3, LoaderCircle, Plus, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fieldKeyFromLabel } from '@/lib/crm/field-keys'
+import { ExcelHeaderImport } from '@/components/crm/excel-header-import'
 import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 
 type Category = { id: string; name: string }
 type Field = { id: string; template_id: string; field_key: string; label: string; field_kind: 'source' | 'user'; input_type: string; options: string[]; is_required: boolean; sort_order: number }
 type Template = { id: string; name: string; description: string | null; category_id: string | null; created_at: string }
 type Role = { role_code: string; label: string }
+type Person = { id: string; full_name: string; role_code: string; is_active: boolean }
 type Step = { template_id: string; role_code: string; step_order: number }
 const supabase = createClient()
 
 async function loadTemplateData() {
-  const [templatesResult, fieldsResult, categoriesResult, rolesResult, stepsResult] = await Promise.all([
+  const [templatesResult, fieldsResult, categoriesResult, rolesResult, stepsResult, peopleResult] = await Promise.all([
     supabase.from('templates').select('id,name,description,category_id,created_at').order('name'),
     supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,input_type,options,is_required,sort_order').order('sort_order'),
     supabase.from('categories').select('id,name').eq('is_active', true).order('name'),
     supabase.from('role_definitions').select('role_code,label').order('label'),
     supabase.from('template_reporting_steps').select('template_id,role_code,step_order').order('step_order'),
+    supabase.from('profiles').select('id,full_name,role_code,is_active').eq('is_active', true).order('full_name'),
   ])
-  if (templatesResult.error || fieldsResult.error || categoriesResult.error || rolesResult.error) throw new Error('Template setup could not be loaded.')
+  if (templatesResult.error || fieldsResult.error || categoriesResult.error || rolesResult.error || peopleResult.error) throw new Error('Template setup could not be loaded.')
   return {
     templates: (templatesResult.data ?? []) as Template[],
     fields: (fieldsResult.data ?? []) as Field[],
     categories: (categoriesResult.data ?? []) as Category[],
     roles: (rolesResult.data ?? []) as Role[],
     steps: (stepsResult.data ?? []) as Step[],
+    people: (peopleResult.data ?? []) as Person[],
     flowReady: !stepsResult.error,
   }
 }
@@ -39,6 +43,7 @@ export default function TemplatesPage() {
   const [selectedId, setSelectedId] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showField, setShowField] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [formError, setFormError] = useState('')
@@ -56,6 +61,7 @@ export default function TemplatesPage() {
   const sourceFields = useMemo(() => fields.filter((field) => field.field_kind === 'source').sort((a, b) => a.sort_order - b.sort_order), [fields])
   const userColumnCount = fields.length - sourceFields.length
   const categoryName = data?.categories.find((category) => category.id === currentTemplate?.category_id)?.name
+  const roleLabels = useMemo(() => new Map((data?.roles ?? []).map((role) => [role.role_code, role.label])), [data?.roles])
 
   const savedFlowKey = useMemo(() => (data?.steps ?? [])
     .filter((step) => step.template_id === currentId)
@@ -98,6 +104,33 @@ export default function TemplatesPage() {
     const { error: insertError } = await supabase.from('template_fields').insert({ template_id: currentId, field_key: fieldKey, label, field_kind: 'source', owner_role_code: null, input_type: inputType, options, is_required: form.get('is_required') === 'on', sort_order: fields.length })
     if (insertError) setFormError('Header could not be added. Header keys must be unique in this template.')
     else { setMessage('Workbook header added.'); formElement.reset(); setShowField(false); await mutate() }
+    setSaving(false)
+  }
+
+  async function importExcelHeaders(labels: string[], mode: 'source' | 'user', ownerProfileId: string) {
+    setSaving(true); setFormError(''); setMessage('')
+    if (mode === 'user' && !ownerProfileId) { setFormError('Choose who owns the imported user columns.'); setSaving(false); return }
+    const usedKeys = new Set(fields.map((field) => field.field_key))
+    const rows = []
+    for (const label of labels) {
+      const base = fieldKeyFromLabel(label, 80)
+      if (!base) continue
+      let fieldKey = base
+      let suffix = 2
+      while (usedKeys.has(fieldKey)) fieldKey = `${base}_${suffix++}`
+      usedKeys.add(fieldKey)
+      rows.push({ template_id: currentId, field_key: fieldKey, label, field_kind: mode, owner_role_code: null, owner_profile_id: mode === 'user' ? ownerProfileId : null, input_type: 'text', options: [], is_required: false, sort_order: fields.length + rows.length })
+    }
+    if (!rows.length) { setFormError('No new headers were found in the selected rows.'); setSaving(false); return }
+    const results = await Promise.all(rows.map((row) => supabase.from('template_fields').insert(row)))
+    if (results.some((result) => result.error)) setFormError('Some headers could not be imported. Check for duplicate labels and try again.')
+    else {
+      const owner = data?.people.find((person) => person.id === ownerProfileId)?.full_name ?? 'the selected person'
+      setMessage(mode === 'source'
+        ? `${rows.length} header${rows.length === 1 ? '' : 's'} imported from Excel into ${currentTemplate?.name ?? 'this template'}.`
+        : `${rows.length} user column${rows.length === 1 ? '' : 's'} imported for ${owner} in ${currentTemplate?.name ?? 'this template'}.`)
+      setShowImport(false); await mutate()
+    }
     setSaving(false)
   }
 
@@ -151,8 +184,9 @@ export default function TemplatesPage() {
     <section className="card section-card" style={{ marginTop: 0 }}>
       <div className="section-head"><div><h2>Workbook templates</h2><p>Choose a template to edit and reorder its uploaded-data headers.</p></div><div className="toolbar-actions">{templates.length > 0 && <select aria-label="Select template" value={currentId} onChange={(event) => { setSelectedId(event.target.value); setMessage(''); setFormError('') }} style={{ minHeight: 36, border: '1px solid var(--border)', borderRadius: 8, padding: '0 10px', background: '#fff', color: '#3a3436', fontSize: 12 }}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>}</div></div>
       {isLoading ? <div className="empty-state"><LoaderCircle className="animate-spin" /></div> : !templates.length ? <div className="empty-state"><span className="empty-icon"><Layers3 /></span><h3>No templates yet</h3><p>Create a template, then add the workbook headers your team imports.</p><button className="secondary-button" style={{ marginTop: 15 }} onClick={() => setShowCreate(true)}><Plus /> Create a template</button></div> : <>
-        <div className="toolbar-row"><div><strong>{currentTemplate?.name}</strong><span className="form-hint" style={{ marginLeft: 9 }}>{categoryName ?? 'All categories'} · {sourceFields.length} headers{userColumnCount ? ` · ${userColumnCount} user columns` : ''}</span></div><button className="secondary-button" onClick={() => setShowField((value) => !value)}><Plus /> Add header</button></div>
+        <div className="toolbar-row"><div><strong>{currentTemplate?.name}</strong><span className="form-hint" style={{ marginLeft: 9 }}>{categoryName ?? 'All categories'} · {sourceFields.length} headers{userColumnCount ? ` · ${userColumnCount} user columns` : ''}</span></div><div className="toolbar-actions"><button className="secondary-button" onClick={() => { setShowField(false); setShowImport((value) => !value) }}><FileSpreadsheet /> Import Excel headers</button><button className="secondary-button" onClick={() => { setShowImport(false); setShowField((value) => !value) }}><Plus /> Add header</button></div></div>
         {showField && <form onSubmit={addField} className="card-pad" style={{ borderTop: '1px solid var(--border)', background: '#fffafb' }}><div className="form-grid"><div className="form-field"><label htmlFor="field-label">Header label</label><input id="field-label" name="label" required maxLength={80} placeholder="e.g. Customer name / ಗ್ರಾಹಕರ ಹೆಸರು" /><span className="form-hint">Any language, including Kannada.</span></div><div className="form-field"><label htmlFor="input-type">Input type</label><select id="input-type" name="input_type" defaultValue="text"><option value="text">Free text</option><option value="number">Number</option><option value="date">Date</option><option value="dropdown">Dropdown</option></select></div><div className="form-field full"><label htmlFor="field-options">Dropdown options</label><textarea id="field-options" name="options" placeholder={'One option per line\nYes\nNo'} /><span className="form-hint">Only used when Input type is Dropdown.</span></div><label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a4144', fontSize: 12 }}><input type="checkbox" name="is_required" /> Required when importing a workbook</label></div><div className="form-actions"><button className="secondary-button" type="button" onClick={() => setShowField(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? <LoaderCircle className="animate-spin" /> : <Plus />} Add header</button></div></form>}
+        {showImport && <ExcelHeaderImport people={data?.people ?? []} roleLabels={roleLabels} onImport={(labels, mode, ownerProfileId) => void importExcelHeaders(labels, mode, ownerProfileId)} onCancel={() => setShowImport(false)} saving={saving} />}
         {sourceFields.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Header</th><th>Key</th><th>Input type</th><th>Required</th></tr></thead><tbody>{sourceFields.map((field, index) => <tr key={field.id} draggable onDragStart={() => setDragId(field.id)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropField(event, field.id)}><td><div style={{ display: 'flex', alignItems: 'center', gap: 3 }}><GripVertical size={15} color="#9a9296" /><button className="quiet-button" style={{ padding: '4px' }} aria-label={`Move ${field.label} up`} disabled={index === 0 || saving} onClick={() => moveField(index, index - 1)}><ArrowUp /></button><button className="quiet-button" style={{ padding: '4px' }} aria-label={`Move ${field.label} down`} disabled={index === sourceFields.length - 1 || saving} onClick={() => moveField(index, index + 1)}><ArrowDown /></button></div></td><td style={{ fontWeight: 650 }}>{field.label}</td><td><code>{field.field_key}</code></td><td>{field.input_type}</td><td>{field.is_required ? 'Required' : 'Optional'}</td></tr>)}</tbody></table></div> : <div className="empty-state"><h3>This template has no headers</h3><p>Add the workbook headers that imported files will map to.</p></div>}
         <div className="card-pad" style={{ borderTop: '1px solid var(--border)', background: '#fffafb' }}>
           <div className="section-head" style={{ padding: '0 0 14px' }}>
