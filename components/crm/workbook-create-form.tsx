@@ -18,16 +18,27 @@ type Category = { id: string; name: string }
 type Person = { id: string; full_name: string; role_code: string; is_active: boolean }
 type RawRow = Record<string, string | number | boolean | null>
 type UserColumn = { id: number; label: string; ownerProfileId: string; required: boolean; inputType: string; options: string }
+type ExistingUserField = {
+  id: string; label: string; owner_profile_id: string | null; owner_role_code: string | null;
+  input_type: string; options: string[]; is_required: boolean; template_id: string | null; workbook_id?: string | null
+}
 const supabase = createClient()
 
 async function loadOptions() {
-  const [categories, people, roles] = await Promise.all([
+  const [categories, people, roles, fieldsResult] = await Promise.all([
     supabase.from('categories').select('id,name').eq('is_active', true).order('name'),
     supabase.from('profiles').select('id,full_name,role_code,is_active').eq('is_active', true).order('full_name'),
     supabase.from('role_definitions').select('role_code,label').order('label'),
+    supabase.from('template_fields').select('id,label,field_kind,owner_profile_id,owner_role_code,input_type,options,is_required,template_id,workbook_id,sort_order').eq('field_kind', 'user').order('label'),
   ])
   if (categories.error || people.error || roles.error) throw new Error('Workbook setup options could not be loaded.')
-  return { categories: (categories.data ?? []) as Category[], people: (people.data ?? []) as Person[], roles: roles.data ?? [] }
+  // Older projects may not have workbook_id on template_fields yet. Keep setup
+  // usable and simply treat every returned user column as shared in that case.
+  const fields = fieldsResult.error
+    ? (await supabase.from('template_fields').select('id,label,field_kind,owner_profile_id,owner_role_code,input_type,options,is_required,template_id,sort_order').eq('field_kind', 'user').order('label')).data ?? []
+    : fieldsResult.data ?? []
+  const existingUserFields = (fields as ExistingUserField[]).filter((field) => !field.workbook_id && !field.template_id)
+  return { categories: (categories.data ?? []) as Category[], people: (people.data ?? []) as Person[], roles: roles.data ?? [], existingUserFields }
 }
 
 export function WorkbookCreateForm() {
@@ -47,6 +58,11 @@ export function WorkbookCreateForm() {
   const categories = data?.categories ?? []
   const allPeople = data?.people ?? []
   const roleLabels = useMemo(() => new Map((data?.roles ?? []).map((role) => [role.role_code, role.label])), [data?.roles])
+  const existingUserFields = data?.existingUserFields ?? []
+  function existingOwnerLabel(field: ExistingUserField) {
+    if (field.owner_profile_id) return allPeople.find((person) => person.id === field.owner_profile_id)?.full_name ?? 'Removed person'
+    return roleLabels.get(field.owner_role_code ?? '') ?? field.owner_role_code ?? 'Team'
+  }
   const assignablePeople = useMemo(() => allPeople.filter((person) => person.role_code !== 'head_office').sort((a, b) => a.full_name.localeCompare(b.full_name)), [allPeople])
   const selectedPeople = assigneeIds.map((id) => assignablePeople.find((person) => person.id === id)).filter((person): person is Person => Boolean(person))
   const sheetColumns = useMemo(() => sheet ? buildHeaderColumns(sheet, Math.max(0, dataStartRow - 1)) : [], [sheet, dataStartRow])
@@ -100,6 +116,10 @@ export function WorkbookCreateForm() {
     if (!sheet || !sheetColumns.length || !dataRows.length) { setFormError('Upload a spreadsheet with at least one column and one data row.'); setPending(false); return }
     if (dataStartRow > sheet.rowCount) { setFormError('The data start row is beyond the uploaded sheet.'); setPending(false); return }
     if (userColumns.some((column) => !column.label.trim() || !column.ownerProfileId)) { setFormError('Every added user column needs a label and an owner.'); setPending(false); return }
+    const newLabels = userColumns.map((column) => column.label.trim().toLowerCase())
+    if (new Set(newLabels).size !== newLabels.length) { setFormError('Each new user column needs a different label.'); setPending(false); return }
+    const duplicateExisting = existingUserFields.find((field) => newLabels.includes(field.label.trim().toLowerCase()))
+    if (duplicateExisting) { setFormError(`“${duplicateExisting.label}” is already defined in User columns. It is available in this workbook automatically — do not add it again.`); setPending(false); return }
 
     // Keep every column and every row exactly as uploaded. No header is removed
     // or renamed: blank cells stay blank and row numbers stay the Excel numbers.
@@ -154,7 +174,7 @@ export function WorkbookCreateForm() {
   if (optionError) return <div className="notice" data-tone="error" role="alert">{optionError.message}</div>
 
   return <form onSubmit={submitWorkbook}>
-    <div className="page-heading"><div><Link className="quiet-button" href="/admin/workbooks" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">Import & route</div><h1>Create a workbook</h1><p>Upload the Excel file as it is. Rows, columns and merged cells are kept unchanged; you only choose where the real data starts and add any user input columns.</p></div><div className="status-pill"><span className="status-dot" />{dataRows.length ? `${dataRows.length.toLocaleString()} saved rows` : 'No file selected'}</div></div>
+    <div className="page-heading"><div><Link className="quiet-button" href="/admin/workbooks" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">Import & route</div><h1>Create a workbook</h1><p>Upload the Excel file as it is. Rows, columns and merged cells are kept unchanged. Choose where the real data starts; user columns already created in User columns are added automatically.</p></div><div className="status-pill"><span className="status-dot" />{dataRows.length ? `${dataRows.length.toLocaleString()} saved rows` : 'No file selected'}</div></div>
     {(message || formError) && <div className="notice" data-tone={formError ? 'error' : undefined} role={formError ? 'alert' : 'status'}>{formError || message}</div>}
 
     <section className="card card-pad">
@@ -167,26 +187,42 @@ export function WorkbookCreateForm() {
     </section>
 
     <section className="card card-pad" style={{ marginTop: 16 }}>
-      <div className="kicker">02 · Upload file</div>
+      <div className="kicker">02 · Upload file &amp; choose data start</div>
       <div className="form-field"><label htmlFor="lead-file">CSV or Excel file</label><label className="card" htmlFor="lead-file" style={{ display: 'flex', alignItems: 'center', gap: 13, padding: 18, cursor: 'pointer', borderStyle: 'dashed', background: '#fffafb' }}><span className="empty-icon" style={{ margin: 0 }}><Upload /></span><span><strong>{fileName || 'Choose a spreadsheet from your device'}</strong><span className="form-hint" style={{ display: 'block', marginTop: 5 }}>CSV, XLS, or XLSX · up to 10 MB and 5,000 data rows. The file is saved exactly as uploaded.</span></span><input id="lead-file" type="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => void selectFile(event.target.files?.[0])} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)' }} /></label></div>
-      {sheet && <div className="form-grid" style={{ marginTop: 14 }}>
-        <div className="form-field"><label htmlFor="data-start-row">Row where actual data starts</label><input id="data-start-row" type="number" min={1} max={sheet.rowCount} value={dataStartRow} onChange={(event) => setDataStartRow(Math.min(sheet.rowCount, Math.max(1, Number(event.target.value) || 1)))} /><span className="form-hint">Rows above this number are kept as the sheet's headings. Nothing is renamed or removed.</span></div>
-        <div className="form-field"><label>Saved sheet</label><div className="status-pill" style={{ alignSelf: 'flex-start' }}><span className="status-dot" />{sheet.rowCount} rows · {sheet.columnCount} columns · {sheet.merges.length} merges</div><span className="form-hint">{dataRows.length} rows will become leads, starting at Excel row {dataStartRow}.</span></div>
-      </div>}
-      {sheet && previewSpans && <div style={{ marginTop: 18 }}>
-        <div className="section-head" style={{ padding: '0 0 10px' }}><div><h2>Uploaded sheet preview</h2><p>Merged cells are detected automatically and will appear merged in the workbook for admins and assignees.</p></div><span className="status-pill">First {previewRows} rows</span></div>
-        <div className="table-wrap"><table className="data-table"><thead><tr><th>Row</th>{Array.from({ length: sheet.columnCount }, (_, index) => <th key={index}>{String.fromCharCode(65 + (index % 26))}{index >= 26 ? Math.floor(index / 26) : ''}</th>)}</tr></thead><tbody>{Array.from({ length: previewRows }, (_, row) => <tr key={row} style={row === dataStartRow - 1 ? { background: '#fff2f4' } : undefined}><td style={{ fontWeight: 650 }}>{row + 1}{row === dataStartRow - 1 ? ' • data starts' : ''}</td>{Array.from({ length: sheet.columnCount }, (_, column) => {
-          const key = `${row}:${column}`
-          if (previewSpans.covered.has(key)) return null
-          const span = previewSpans.spans.get(key) ?? { rowSpan: 1, colSpan: 1 }
-          return <td key={key} rowSpan={span.rowSpan} colSpan={span.colSpan} style={row >= dataStartRow - 1 ? undefined : { fontWeight: 600 }}>{valueAt(sheet.rows, sheet.merges, row, column)}</td>
-        })}</tr>)}</tbody></table></div>
-      </div>}
+      {!sheet ? <p className="form-hint" style={{ marginTop: 12 }}>Upload a file, then choose the Excel row where real data starts. Rows above it stay as headings.</p> : <>
+        <div className="notice" style={{ marginTop: 14, background: '#fff8f8', borderColor: '#f3d7da' }}>
+          <strong>Choose the first data row</strong>
+          <span>Rows 1–{Math.max(0, dataStartRow - 1)} are headings and appear in the red header style. Row {dataStartRow} onward are data rows. Click a row in the preview or use the box below.</span>
+        </div>
+        <div className="form-grid" style={{ marginTop: 14 }}>
+          <div className="form-field"><label htmlFor="data-start-row">Excel row where actual data starts</label><input id="data-start-row" type="number" min={1} max={sheet.rowCount} value={dataStartRow} onChange={(event) => setDataStartRow(Math.min(sheet.rowCount, Math.max(1, Number(event.target.value) || 1)))} /><span className="form-hint">Nothing is renamed or removed. Only the row number changes which rows are shown as headers.</span></div>
+          <div className="form-field"><label>Saved sheet</label><div className="status-pill" style={{ alignSelf: 'flex-start' }}><span className="status-dot" />{sheet.rowCount} rows · {sheet.columnCount} columns · {sheet.merges.length} merges</div><span className="form-hint">{dataRows.length} rows will become data, starting at Excel row {dataStartRow}.</span></div>
+        </div>
+        {previewSpans && <div style={{ marginTop: 18 }}>
+          <div className="section-head" style={{ padding: '0 0 10px' }}><div><h2>Uploaded sheet preview</h2><p>Pale red = heading rows. Solid red = the first data row. Merged cells are detected automatically and appear merged in the workbook.</p></div><span className="status-pill">First {previewRows} rows</span></div>
+          <div className="table-wrap"><table className="data-table"><thead><tr><th>Excel row</th>{Array.from({ length: sheet.columnCount }, (_, index) => <th key={index}>{String.fromCharCode(65 + (index % 26))}{index >= 26 ? Math.floor(index / 26) : ''}</th>)}</tr></thead><tbody>{Array.from({ length: previewRows }, (_, row) => {
+            const excelRow = row + 1
+            const isStart = excelRow === dataStartRow
+            const isHeader = excelRow < dataStartRow
+            return <tr key={row} style={isStart ? { background: '#c8102e', color: '#fff' } : isHeader ? { background: '#fde9ec' } : undefined}>
+              <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}><span>{excelRow}</span><button type="button" className="quiet-button" style={{ marginLeft: 8, minHeight: 24, padding: '0 7px', fontSize: 10, background: isStart ? '#fff' : undefined, color: isStart ? '#c8102e' : undefined }} disabled={isStart} onClick={() => setDataStartRow(excelRow)}>{isStart ? 'Data starts' : 'Set as start'}</button></td>
+              {Array.from({ length: sheet.columnCount }, (_, column) => {
+                const key = `${row}:${column}`
+                if (previewSpans.covered.has(key)) return null
+                const span = previewSpans.spans.get(key) ?? { rowSpan: 1, colSpan: 1 }
+                return <td key={key} rowSpan={span.rowSpan} colSpan={span.colSpan} style={isHeader ? { fontWeight: 600, background: '#fde9ec', color: '#8a0f1f' } : isStart ? { color: '#fff', fontWeight: 650 } : undefined}>{valueAt(sheet.rows, sheet.merges, row, column)}</td>
+              })}
+            </tr>
+          })}</tbody></table></div>
+        </div>}
+      </>}
     </section>
 
     <section className="card card-pad" style={{ marginTop: 16 }}>
-      <div className="kicker">03 · Assigned user columns</div>
-      <div className="section-head" style={{ padding: '0 0 12px' }}><div><h2>Add input columns for your team</h2><p>These are extra columns. They do not change any column or value imported from the Excel file.</p></div><UsersRound color="#6b6265" /></div>
+      <div className="kicker">03 · User columns</div>
+      <div className="section-head" style={{ padding: '0 0 12px' }}><div><h2>Columns you already created</h2><p>Shared columns from <strong>User columns</strong> are available in this workbook automatically. Add a new one below only when the column does not exist yet.</p></div><Link className="secondary-button" href="/admin/user-columns"><UsersRound /> Manage user columns</Link></div>
+      {existingUserFields.length ? <div className="table-wrap" style={{ marginBottom: 18 }}><table className="data-table"><thead><tr><th>Column</th><th>Owner</th><th>Input</th><th>Required</th><th>Availability</th></tr></thead><tbody>{existingUserFields.map((field) => <tr key={field.id}><td style={{ fontWeight: 650 }}>{field.label}</td><td>{existingOwnerLabel(field)}</td><td>{field.input_type}</td><td>{field.is_required ? 'Required' : 'Optional'}</td><td><span className="status-pill"><span className="status-dot" />Added automatically</span></td></tr>)}</tbody></table></div> : <div className="notice" style={{ marginBottom: 18 }}><UsersRound /> No shared user columns yet. <Link href="/admin/user-columns" style={{ color: '#c8102e', fontWeight: 650 }}>Create them here</Link> and they will appear in every workbook.</div>}
+      <div className="section-head" style={{ padding: '0 0 12px', borderTop: '1px solid var(--border)', paddingTop: 16 }}><div><h2>Add a new column (optional)</h2><p>These extra columns do not change any column or value imported from the Excel file.</p></div></div>
       {userColumns.map((column) => <div className="form-grid" key={column.id} style={{ marginBottom: 8 }}>
         <div className="form-field"><label>Column label</label><input aria-label="User column label" value={column.label} onChange={(event) => updateUserColumn(column.id, { label: event.target.value })} placeholder="e.g. Verification remarks" /></div>
         <div className="form-field"><label>Owner</label><select aria-label="User column owner" value={column.ownerProfileId} onChange={(event) => updateUserColumn(column.id, { ownerProfileId: event.target.value })}><option value="">Select person</option>{allPeople.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}</select></div>
@@ -195,7 +231,7 @@ export function WorkbookCreateForm() {
         {column.inputType === 'dropdown' && <div className="form-field full"><label>Options (comma separated)</label><input aria-label="User column options" value={column.options} onChange={(event) => updateUserColumn(column.id, { options: event.target.value })} /></div>}
         <div className="form-field"><button type="button" className="quiet-button" onClick={() => setUserColumns((current) => current.filter((item) => item.id !== column.id))}><Trash2 /> Remove</button></div>
       </div>)}
-      <button type="button" className="secondary-button" onClick={addUserColumn}><Plus /> Add user column</button>
+      <button type="button" className="secondary-button" onClick={addUserColumn}><Plus /> Add new column</button>
     </section>
 
     <section className="card card-pad" style={{ marginTop: 16 }}>
