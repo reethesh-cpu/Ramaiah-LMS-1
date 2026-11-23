@@ -7,12 +7,13 @@ import useSWR from 'swr'
 import * as XLSX from 'xlsx'
 import { ArrowLeft, Check, FileSpreadsheet, LoaderCircle, Pencil, Search, Send, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { WorkbookTableHeader } from '@/components/crm/workbook-table-header'
 
-type Field = { id: string; template_id: string | null; field_key: string; label: string; field_kind: 'source' | 'user'; owner_role_code: string | null; owner_profile_id: string | null; input_type: string; options: string[]; is_required: boolean; sort_order: number }
+type Field = { id: string; template_id: string | null; field_key: string; label: string; field_kind: 'source' | 'user'; header_path: string[]; owner_role_code: string | null; owner_profile_id: string | null; input_type: string; options: string[]; is_required: boolean; sort_order: number }
 type Assignment = { id: string; lead_id: string; assigned_to: string; role_code: string; status: 'assigned' | 'completed'; assigned_at: string; completed_at: string | null; assignment_field_values: Array<{ field_id: string; value: unknown; updated_at: string }> }
 type Lead = { id: string; row_number: number; source_values: Record<string, string | number | boolean | null> }
 type Person = { id: string; full_name: string; role_code: string }
-type Workbook = { id: string; name: string; status: string; template_id: string | null; categories: { name: string } | null; templates: { name: string } | null }
+type Workbook = { id: string; name: string; status: string; header_rows: number; template_id: string | null; categories: { name: string } | null; templates: { name: string } | null }
 type DetailData = { userId: string; profile: Person; roles: Array<{ role_code: string; label: string }>; people: Person[]; fields: Field[]; workbook: Workbook; leads: Lead[]; assignments: Assignment[] }
 const supabase = createClient()
 
@@ -20,9 +21,9 @@ async function loadFields(workbookId: string, templateId: string | null) {
   const filters = [`workbook_id.eq.${workbookId}`, 'and(workbook_id.is.null,template_id.is.null)']
   if (templateId) filters.push(`and(workbook_id.is.null,template_id.eq.${templateId})`)
   const orFilter = filters.join(',')
-  const full = await supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id').or(orFilter).order('sort_order')
+  const full = await supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,header_path,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id').or(orFilter).order('sort_order')
   if (!full.error) return full
-  return supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id').or(orFilter).order('sort_order')
+  return supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,header_path,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id').or(orFilter).order('sort_order')
 }
 
 async function loadDetail(workbookId: string): Promise<DetailData> {
@@ -32,7 +33,7 @@ async function loadDetail(workbookId: string): Promise<DetailData> {
     supabase.from('profiles').select('id,full_name,role_code').eq('id', user.id).single(),
     supabase.from('role_definitions').select('role_code,label'),
     supabase.from('profiles').select('id,full_name,role_code'),
-    supabase.from('workbooks').select('id,name,status,template_id,categories(name),templates(name)').eq('id', workbookId).maybeSingle(),
+    supabase.from('workbooks').select('id,name,status,header_rows,template_id,categories(name),templates(name)').eq('id', workbookId).maybeSingle(),
   ])
   if (profileResult.error || !profileResult.data || rolesResult.error || peopleResult.error || workbookResult.error || !workbookResult.data) throw new Error('This workbook is not available to you.')
   const workbook = workbookResult.data as unknown as Workbook
@@ -173,7 +174,7 @@ export default function WorkspaceWorkbookPage() {
     </tr>
   }
 
-  const tableHeader = <thead><tr><th>Lead</th>{sourceFields.map((field) => <th key={field.id}>{field.label}</th>)}{userFields.map((field) => <th key={field.id}>{ownerLabelFor(field)} · {field.label}</th>)}<th>Team status</th><th>Action</th></tr></thead>
+  const tableHeader = <WorkbookTableHeader leadingCells={['Lead']} trailingCells={['Team status', 'Action']} sourceFields={sourceFields} userFields={userFields} headerRows={data.workbook.header_rows ?? 1} ownerLabel={ownerLabelFor} />
 
   return <>
     <div className="page-heading"><div><Link className="quiet-button" href="/workspace" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">{data.workbook.categories?.name ?? 'Workbook'} · {data.workbook.templates?.name ?? 'Template'}</div><h1>{data.workbook.name}</h1><p>Review the leads in this workbook, update your own columns, and submit completed work.</p></div><div className="toolbar-actions"><span className="status-pill" data-tone={data.workbook.status === 'closed' ? 'neutral' : data.workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{data.workbook.status}</span><button className="secondary-button" onClick={notifyManager} disabled={notifyBusy}>{notifyBusy ? <LoaderCircle className="animate-spin" /> : <Send />} Notify manager</button><button className="secondary-button" onClick={downloadView}><FileSpreadsheet /> Export view</button></div></div>
