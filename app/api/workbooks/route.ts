@@ -7,10 +7,11 @@ import { fieldKeyFromLabel } from '@/lib/crm/field-keys'
 const CHUNK_SIZE = 500
 
 type ImportRow = Record<string, string | number | boolean | null>
-type SourceFieldInput = { label?: string; field_key?: string; is_required?: boolean; header_path?: string[] }
+type MergeInput = { s?: { r?: number; c?: number }; e?: { r?: number; c?: number } }
+type SourceFieldInput = { label?: string; field_key?: string; is_required?: boolean; header_path?: string[]; column_index?: number | null }
 type UserFieldInput = {
   label?: string; field_key?: string; header_path?: string[]; owner_profile_id?: string;
-  is_required?: boolean; input_type?: string; options?: string[]
+  is_required?: boolean; input_type?: string; options?: string[]; column_index?: number | null
 }
 
 export async function POST(request: Request) {
@@ -19,7 +20,8 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null) as null | {
     name?: string; category_id?: string; template_id?: string; status?: string;
-    rows?: ImportRow[]; row_numbers?: number[]; header_rows?: number;
+    rows?: ImportRow[]; row_numbers?: number[]; header_rows?: number; data_start_row?: number;
+    sheet_cells?: string[][]; sheet_merges?: MergeInput[]; column_count?: number;
     assignee_ids?: string[]; reporting_steps?: Array<{ role_code?: string; step_order?: number }>;
     source_fields?: SourceFieldInput[]; user_fields?: UserFieldInput[];
   }
@@ -31,7 +33,9 @@ export async function POST(request: Request) {
     .filter((role): role is string => typeof role === 'string' && role.trim().length > 0))]
 
   const hasTemplate = typeof body?.template_id === 'string' && body.template_id.length > 0
-  const headerRows = Number.isInteger(body?.header_rows) ? Math.min(10, Math.max(1, Number(body!.header_rows))) : 1
+  const headerRows = Number.isInteger(body?.header_rows) ? Math.min(10, Math.max(0, Number(body!.header_rows))) : 1
+  const sheetCells = Array.isArray(body?.sheet_cells) ? body!.sheet_cells.filter((row) => Array.isArray(row)).slice(0, 5000) : []
+  const dataStartRow = Number.isInteger(body?.data_start_row) ? Math.max(1, Number(body!.data_start_row)) : headerRows + 1
   const rawSourceFields = Array.isArray(body?.source_fields) ? body!.source_fields : []
   const rawUserFields = Array.isArray(body?.user_fields) ? body!.user_fields : []
   const rowNumbers = Array.isArray(body?.row_numbers) ? body!.row_numbers : []
@@ -47,8 +51,11 @@ export async function POST(request: Request) {
   if (rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row) || Object.keys(row).length > 120)) {
     return NextResponse.json({ error: 'The uploaded file contains invalid rows.' }, { status: 400 })
   }
-  if (rowNumbers.length && (rowNumbers.length !== rows.length || rowNumbers.some((value) => !Number.isInteger(value) || Number(value) < headerRows + 1))) {
+  if (rowNumbers.length && (rowNumbers.length !== rows.length || rowNumbers.some((value) => !Number.isInteger(value) || Number(value) < dataStartRow))) {
     return NextResponse.json({ error: 'The uploaded row numbers are invalid.' }, { status: 400 })
+  }
+  if (sheetCells.length && dataStartRow > sheetCells.length) {
+    return NextResponse.json({ error: 'The data start row is beyond the uploaded sheet.' }, { status: 400 })
   }
 
   const admin = createAdminClient()
@@ -78,11 +85,11 @@ export async function POST(request: Request) {
     ? value.slice(0, 10).map((item) => String(item ?? '').trim().slice(0, 120))
     : []
 
-  let sourceFields: Array<{ field_key: string; label: string; is_required: boolean; header_path: string[] }>
+  let sourceFields: Array<{ field_key: string; label: string; is_required: boolean; header_path: string[]; column_index: number | null }>
   if (hasTemplate) {
     sourceFields = ((templateFieldsResult.data ?? []) as Array<{ field_key: string; field_kind: string; is_required: boolean; label: string }>)
       .filter((field) => field.field_kind === 'source')
-      .map((field) => ({ field_key: field.field_key, label: field.label, is_required: field.is_required, header_path: [] }))
+      .map((field) => ({ field_key: field.field_key, label: field.label, is_required: field.is_required, header_path: [], column_index: null }))
   } else {
     const seen = new Set<string>()
     sourceFields = []
@@ -96,14 +103,14 @@ export async function POST(request: Request) {
       let suffix = 2
       while (seen.has(key)) key = `${base.slice(0, 72)}_${suffix++}`
       seen.add(key)
-      sourceFields.push({ field_key: key, label, is_required: Boolean(raw?.is_required), header_path: cleanPath(raw?.header_path) })
+      sourceFields.push({ field_key: key, label, is_required: Boolean(raw?.is_required), header_path: cleanPath(raw?.header_path), column_index: Number.isInteger(raw?.column_index) ? Number(raw!.column_index) : null })
       if (sourceFields.length >= 120) break
     }
   }
 
   const userFields: Array<{
     field_key: string; label: string; header_path: string[]; owner_profile_id: string;
-    owner_role_code: string; is_required: boolean; input_type: string; options: string[]
+    owner_role_code: string; is_required: boolean; input_type: string; options: string[]; column_index: number | null
   }> = []
   const usedKeys = new Set(sourceFields.map((field) => field.field_key))
   for (const raw of rawUserFields) {
@@ -127,6 +134,7 @@ export async function POST(request: Request) {
       is_required: Boolean(raw?.is_required),
       input_type: inputType,
       options: Array.isArray(raw?.options) ? raw!.options.slice(0, 40).map((option) => String(option ?? '').trim().slice(0, 80)).filter(Boolean) : [],
+      column_index: Number.isInteger(raw?.column_index) ? Number(raw!.column_index) : null,
     })
   }
 
@@ -147,9 +155,16 @@ export async function POST(request: Request) {
     status: body.status ?? 'active',
     created_by: actor.user.id,
     header_rows: headerRows,
+    data_start_row: dataStartRow,
+    sheet_cells: sheetCells,
+    sheet_merges: Array.isArray(body?.sheet_merges) ? body!.sheet_merges.slice(0, 2000).map((merge) => ({
+      s: { r: Number(merge?.s?.r ?? 0), c: Number(merge?.s?.c ?? 0) },
+      e: { r: Number(merge?.e?.r ?? 0), c: Number(merge?.e?.c ?? 0) },
+    })) : [],
+    column_count: Number.isInteger(body?.column_count) ? Number(body!.column_count) : sheetCells[0]?.length ?? 0,
   }).select('id').single()
   if (workbookError || !workbook) {
-    return NextResponse.json({ error: 'The workbook could not be created. Run supabase/manual-apply/09_reporting_flow.sql, 10_workbook_direct_upload.sql, and 11_excel_header_layout.sql in Supabase.' }, { status: 500 })
+    return NextResponse.json({ error: 'The workbook could not be created. Run supabase/manual-apply/09_reporting_flow.sql, 10_workbook_direct_upload.sql, 11_excel_header_layout.sql, and 12_preserve_excel_grid.sql in Supabase.' }, { status: 500 })
   }
 
   const fieldRows = [
@@ -166,6 +181,7 @@ export async function POST(request: Request) {
       is_required: field.is_required,
       sort_order: index,
       header_path: field.header_path,
+      column_index: field.column_index,
     })) : []),
     ...userFields.map((field, index) => ({
       workbook_id: workbook.id,
@@ -180,13 +196,14 @@ export async function POST(request: Request) {
       is_required: field.is_required,
       sort_order: 100 + index,
       header_path: field.header_path,
+      column_index: field.column_index,
     })),
   ]
   if (fieldRows.length) {
     const { error: fieldInsertError } = await admin.from('template_fields').insert(fieldRows)
     if (fieldInsertError) {
       await admin.from('workbooks').delete().eq('id', workbook.id)
-      return NextResponse.json({ error: 'The workbook columns could not be saved. Run supabase/manual-apply/10_workbook_direct_upload.sql and 11_excel_header_layout.sql in Supabase.' }, { status: 500 })
+      return NextResponse.json({ error: 'The workbook columns could not be saved. Run supabase/manual-apply/10_workbook_direct_upload.sql, 11_excel_header_layout.sql, and 12_preserve_excel_grid.sql in Supabase.' }, { status: 500 })
     }
   }
 
@@ -212,7 +229,7 @@ export async function POST(request: Request) {
   for (let offset = 0; offset < rows.length; offset += CHUNK_SIZE) {
     const batch = rows.slice(offset, offset + CHUNK_SIZE).map((source_values, index) => ({
       workbook_id: workbook.id,
-      row_number: rowNumbers.length ? Number(rowNumbers[offset + index]) : headerRows + offset + index + 1,
+      row_number: rowNumbers.length ? Number(rowNumbers[offset + index]) : dataStartRow + offset + index,
       source_values,
     }))
     const { data, error } = await admin.from('lead_records').insert(batch).select('id')
@@ -251,5 +268,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ workbook_id: workbook.id, lead_count: leadIds.length, assigned_to: assigneeIds.length, reporting_flow_saved: flowSaved, header_rows: headerRows }, { status: 201 })
+  return NextResponse.json({ workbook_id: workbook.id, lead_count: leadIds.length, assigned_to: assigneeIds.length, reporting_flow_saved: flowSaved, data_start_row: dataStartRow }, { status: 201 })
 }

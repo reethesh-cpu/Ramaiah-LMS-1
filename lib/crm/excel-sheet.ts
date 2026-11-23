@@ -40,7 +40,6 @@ export function parseSheet(bytes: ArrayBuffer): ParsedSheet {
 
 export function buildHeaderColumns(sheet: ParsedSheet, headerRows: number): HeaderColumn[] {
   const columns: HeaderColumn[] = []
-  const seen = new Set<string>()
   for (let column = 0; column < sheet.columnCount; column++) {
     const headerPath: string[] = []
     for (let row = 0; row < headerRows; row++) {
@@ -48,13 +47,7 @@ export function buildHeaderColumns(sheet: ParsedSheet, headerRows: number): Head
     }
     const parts: string[] = []
     for (const value of headerPath) if (value && !parts.includes(value)) parts.push(value)
-    let label = parts.join(' · ') || `Column ${XLSX.utils.encode_col(column)}`
-    if (seen.has(label)) {
-      let suffix = 2
-      while (seen.has(`${label} (${suffix})`)) suffix += 1
-      label = `${label} (${suffix})`
-    }
-    seen.add(label)
+    const label = parts.join(' · ') || `Column ${XLSX.utils.encode_col(column)}`
     const sampleRow = sheet.rows.slice(headerRows).find((row) => String(row[column] ?? '').trim())
     columns.push({
       columnIndex: column,
@@ -67,13 +60,47 @@ export function buildHeaderColumns(sheet: ParsedSheet, headerRows: number): Head
   return columns
 }
 
-export function dataRows(sheet: ParsedSheet, headerRows: number): DataRow[] {
+// dataStartRow is the 1-based Excel row number where actual data begins. Every
+// row from there onward is kept exactly as it appears in the file, blank rows
+// included, so the web view matches the spreadsheet.
+export function dataRows(sheet: ParsedSheet, dataStartRow: number): DataRow[] {
   const rows: DataRow[] = []
-  for (let index = headerRows; index < sheet.rows.length; index++) {
-    const cells = sheet.rows[index] ?? []
-    if (!cells.some((cell) => String(cell ?? '').trim())) continue
-    rows.push({ excelRow: index + 1, cells })
+  for (let index = Math.max(0, dataStartRow - 1); index < sheet.rows.length; index++) {
+    rows.push({ excelRow: index + 1, cells: sheet.rows[index] ?? [] })
     if (rows.length >= 5000) break
   }
   return rows
+}
+
+export type MergeSpans = {
+  covered: Set<string>
+  spans: Map<string, { rowSpan: number; colSpan: number }>
+}
+
+// Clamp Excel merge ranges to the visible grid so merged header/data cells can
+// be rendered with the same rowSpan/colSpan in HTML.
+export function buildMergeSpans(rowCount: number, columnCount: number, merges: MergeRange[]): MergeSpans {
+  const covered = new Set<string>()
+  const spans = new Map<string, { rowSpan: number; colSpan: number }>()
+  for (const merge of merges) {
+    const rowStart = Math.max(0, merge.s.r)
+    const rowEnd = Math.min(rowCount - 1, merge.e.r)
+    const colStart = Math.max(0, merge.s.c)
+    const colEnd = Math.min(columnCount - 1, merge.e.c)
+    if (rowStart > rowEnd || colStart > colEnd) continue
+    spans.set(`${rowStart}:${colStart}`, { rowSpan: rowEnd - rowStart + 1, colSpan: colEnd - colStart + 1 })
+    for (let row = rowStart; row <= rowEnd; row++) {
+      for (let column = colStart; column <= colEnd; column++) {
+        if (row !== rowStart || column !== colStart) covered.add(`${row}:${column}`)
+      }
+    }
+  }
+  return { covered, spans }
+}
+
+export function detectDataStartRow(sheet: ParsedSheet): number {
+  for (let index = 1; index < sheet.rows.length; index++) {
+    if ((sheet.rows[index] ?? []).some((cell) => String(cell ?? '').trim())) return index + 1
+  }
+  return Math.min(2, sheet.rows.length)
 }
