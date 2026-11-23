@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getHeadOfficeActor } from '@/lib/crm/server-auth'
 import { mergeFlowRoles } from '@/lib/crm/reporting-flow'
+import { fieldKeyFromLabel } from '@/lib/crm/field-keys'
 
 const CHUNK_SIZE = 500
 
 type ImportRow = Record<string, string | number | boolean | null>
+type SourceFieldInput = { label?: string; field_key?: string; is_required?: boolean }
 
 export async function POST(request: Request) {
   const actor = await getHeadOfficeActor()
@@ -14,6 +16,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as null | {
     name?: string; category_id?: string; template_id?: string; status?: string;
     rows?: ImportRow[]; assignee_ids?: string[]; reporting_steps?: Array<{ role_code?: string; step_order?: number }>;
+    source_fields?: SourceFieldInput[];
   }
   const name = body?.name?.trim()
   const rows = body?.rows
@@ -21,30 +24,61 @@ export async function POST(request: Request) {
   let stepRoles = [...new Set((body?.reporting_steps ?? [])
     .map((step) => step?.role_code)
     .filter((role): role is string => typeof role === 'string' && role.trim().length > 0))]
-  if (!name || name.length > 120 || !body?.category_id || !body?.template_id || !Array.isArray(rows) || rows.length < 1 || rows.length > 5000 || assigneeIds.length > 20 || stepRoles.length > 20) {
-    return NextResponse.json({ error: 'Add a workbook name, category, template, and a file with 1–5,000 rows.' }, { status: 400 })
+
+  const hasTemplate = typeof body?.template_id === 'string' && body.template_id.length > 0
+  const rawSourceFields = Array.isArray(body?.source_fields) ? body!.source_fields : []
+  if (!name || name.length > 120 || !body?.category_id || !Array.isArray(rows) || rows.length < 1 || rows.length > 5000 || assigneeIds.length > 20 || stepRoles.length > 20) {
+    return NextResponse.json({ error: 'Add a workbook name, category, and a file with 1–5,000 rows.' }, { status: 400 })
+  }
+  if (!hasTemplate && rawSourceFields.length < 1) {
+    return NextResponse.json({ error: 'Upload a file so the workbook can use its first row as headers.' }, { status: 400 })
   }
   if (body.status && !['active', 'ongoing', 'closed'].includes(body.status)) return NextResponse.json({ error: 'Choose a valid workbook status.' }, { status: 400 })
-  if (rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row) || Object.keys(row).length > 100)) {
+  if (rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row) || Object.keys(row).length > 120)) {
     return NextResponse.json({ error: 'The uploaded file contains invalid rows.' }, { status: 400 })
   }
 
   const admin = createAdminClient()
-  const [{ data: category }, { data: template }, { data: fields }, { data: assignees }] = await Promise.all([
+  const [{ data: category }, templateResult, templateFieldsResult, { data: assignees }] = await Promise.all([
     admin.from('categories').select('id,is_active').eq('id', body.category_id).maybeSingle(),
-    admin.from('templates').select('id,category_id').eq('id', body.template_id).maybeSingle(),
-    admin.from('template_fields').select('field_key,field_kind,owner_role_code,is_required').eq('template_id', body.template_id),
+    hasTemplate ? admin.from('templates').select('id,category_id').eq('id', body!.template_id as string).maybeSingle() : Promise.resolve({ data: null }),
+    hasTemplate ? admin.from('template_fields').select('field_key,field_kind,owner_role_code,is_required,label').eq('template_id', body!.template_id as string) : Promise.resolve({ data: [] }),
     assigneeIds.length ? admin.from('profiles').select('id,role_code,is_active').in('id', assigneeIds) : Promise.resolve({ data: [] }),
   ])
+  const template = templateResult.data
 
-  if (!category?.is_active || !template) return NextResponse.json({ error: 'The selected category or template is unavailable.' }, { status: 400 })
-  if (template.category_id && template.category_id !== category.id) return NextResponse.json({ error: 'This template belongs to a different category.' }, { status: 400 })
-  const sourceFields = (fields ?? []).filter((field) => field.field_kind === 'source')
+  if (!category?.is_active) return NextResponse.json({ error: 'The selected category is unavailable.' }, { status: 400 })
+  if (hasTemplate && !template) return NextResponse.json({ error: 'The selected template is unavailable.' }, { status: 400 })
+  if (hasTemplate && template?.category_id && template.category_id !== category.id) return NextResponse.json({ error: 'This template belongs to a different category.' }, { status: 400 })
+
+  let sourceFields: Array<{ field_key: string; label: string; is_required: boolean }>
+  if (hasTemplate) {
+    sourceFields = ((templateFieldsResult.data ?? []) as Array<{ field_key: string; field_kind: string; is_required: boolean; label: string }>)
+      .filter((field) => field.field_kind === 'source')
+      .map((field) => ({ field_key: field.field_key, label: field.label, is_required: field.is_required }))
+  } else {
+    const seen = new Set<string>()
+    sourceFields = []
+    for (let index = 0; index < rawSourceFields.length; index++) {
+      const raw = rawSourceFields[index]
+      const label = String(raw?.label ?? '').trim().slice(0, 120)
+      if (!label) continue
+      let key = String(raw?.field_key ?? '').trim() || fieldKeyFromLabel(label, 80)
+      if (!key) continue
+      const base = key.slice(0, 80)
+      let suffix = 2
+      while (seen.has(key)) key = `${base.slice(0, 72)}_${suffix++}`
+      seen.add(key)
+      sourceFields.push({ field_key: key, label, is_required: Boolean(raw?.is_required) })
+      if (sourceFields.length >= 120) break
+    }
+  }
+
   const allowedKeys = new Set(sourceFields.map((field) => field.field_key))
-  if (!sourceFields.length) return NextResponse.json({ error: 'This template needs at least one source column before it can import a file.' }, { status: 400 })
-  if (rows.some((row) => Object.keys(row).some((key) => !allowedKeys.has(key)))) return NextResponse.json({ error: 'The uploaded data contains columns that do not match this template.' }, { status: 400 })
+  if (!sourceFields.length) return NextResponse.json({ error: 'The workbook needs at least one header column.' }, { status: 400 })
+  if (rows.some((row) => Object.keys(row).some((key) => !allowedKeys.has(key)))) return NextResponse.json({ error: 'The uploaded data contains columns that do not match the workbook headers.' }, { status: 400 })
   const missingRequired = sourceFields.filter((field) => field.is_required && rows.some((row) => row[field.field_key] === null || String(row[field.field_key] ?? '').trim() === ''))
-  if (missingRequired.length) return NextResponse.json({ error: `Required values are missing for: ${missingRequired.map((field) => field.field_key).join(', ')}.` }, { status: 400 })
+  if (missingRequired.length) return NextResponse.json({ error: `Required values are missing for: ${missingRequired.map((field) => field.label || field.field_key).join(', ')}.` }, { status: 400 })
   if ((assignees ?? []).length !== assigneeIds.length || (assignees ?? []).some((person) => !person.is_active)) {
     return NextResponse.json({ error: 'One or more selected team members are unavailable.' }, { status: 400 })
   }
@@ -56,18 +90,39 @@ export async function POST(request: Request) {
   const { data: workbook, error: workbookError } = await admin.from('workbooks').insert({
     name,
     category_id: category.id,
-    template_id: template.id,
+    template_id: hasTemplate ? template!.id : null,
     status: body.status ?? 'active',
     created_by: actor.user.id,
   }).select('id').single()
   if (workbookError || !workbook) return NextResponse.json({ error: 'The workbook could not be created.' }, { status: 500 })
+
+  if (!hasTemplate) {
+    const fieldRows = sourceFields.map((field, index) => ({
+      workbook_id: workbook.id,
+      template_id: null,
+      field_key: field.field_key,
+      label: field.label,
+      field_kind: 'source',
+      owner_role_code: null,
+      owner_profile_id: null,
+      input_type: 'text',
+      options: [],
+      is_required: field.is_required,
+      sort_order: index,
+    }))
+    const { error: fieldInsertError } = await admin.from('template_fields').insert(fieldRows)
+    if (fieldInsertError) {
+      await admin.from('workbooks').delete().eq('id', workbook.id)
+      return NextResponse.json({ error: 'The workbook headers could not be saved. Run supabase/manual-apply/10_workbook_direct_upload.sql in Supabase.' }, { status: 500 })
+    }
+  }
 
   // Copy the chosen role flow onto the workbook. With no explicit flow, start
   // from the template's default flow so every workbook gets a reporting chain.
   // If the flow table is not available yet the workbook still opens, but only
   // assigned people and head office can see its leads.
   let flowSaved = true
-  if (!stepRoles.length) {
+  if (!stepRoles.length && hasTemplate && template) {
     const { data: templateSteps, error: templateFlowError } = await admin
       .from('template_reporting_steps').select('role_code').eq('template_id', template.id).order('step_order')
     if (templateFlowError) flowSaved = false

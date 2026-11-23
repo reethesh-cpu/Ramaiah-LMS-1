@@ -12,14 +12,17 @@ type Field = { id: string; template_id: string | null; field_key: string; label:
 type Assignment = { id: string; lead_id: string; assigned_to: string; role_code: string; status: 'assigned' | 'completed'; assigned_at: string; completed_at: string | null; assignment_field_values: Array<{ field_id: string; value: unknown; updated_at: string }> }
 type Lead = { id: string; row_number: number; source_values: Record<string, string | number | boolean | null> }
 type Person = { id: string; full_name: string; role_code: string }
-type Workbook = { id: string; name: string; status: string; template_id: string; categories: { name: string } | null; templates: { name: string } | null }
+type Workbook = { id: string; name: string; status: string; template_id: string | null; categories: { name: string } | null; templates: { name: string } | null }
 type DetailData = { userId: string; profile: Person; roles: Array<{ role_code: string; label: string }>; people: Person[]; fields: Field[]; workbook: Workbook; leads: Lead[]; assignments: Assignment[] }
 const supabase = createClient()
 
-async function loadFields(templateId: string) {
-  const full = await supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
+async function loadFields(workbookId: string, templateId: string | null) {
+  const filters = [`workbook_id.eq.${workbookId}`, 'and(workbook_id.is.null,template_id.is.null)']
+  if (templateId) filters.push(`and(workbook_id.is.null,template_id.eq.${templateId})`)
+  const orFilter = filters.join(',')
+  const full = await supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id').or(orFilter).order('sort_order')
   if (!full.error) return full
-  return supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
+  return supabase.from('template_fields').select('id,template_id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id').or(orFilter).order('sort_order')
 }
 
 async function loadDetail(workbookId: string): Promise<DetailData> {
@@ -34,7 +37,7 @@ async function loadDetail(workbookId: string): Promise<DetailData> {
   if (profileResult.error || !profileResult.data || rolesResult.error || peopleResult.error || workbookResult.error || !workbookResult.data) throw new Error('This workbook is not available to you.')
   const workbook = workbookResult.data as unknown as Workbook
   const [fieldsResult, leadsResult] = await Promise.all([
-    loadFields(workbook.template_id),
+    loadFields(workbookId, workbook.template_id ?? null),
     supabase.from('lead_records').select('id,row_number,source_values').eq('workbook_id', workbookId).order('row_number').range(0, 4999),
   ])
   if (fieldsResult.error || leadsResult.error) throw new Error('This workbook could not be loaded.')

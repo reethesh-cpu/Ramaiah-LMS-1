@@ -10,7 +10,7 @@ import { ArrowLeft, Bell, Check, ChevronDown, Download, Flag, GitBranch, LoaderC
 import { createClient } from '@/lib/supabase/client'
 import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 
-type Workbook = { id: string; name: string; status: string; is_prioritized: boolean; category_id: string; template_id: string; created_at: string; categories: { name: string } | null; templates: { name: string } | null }
+type Workbook = { id: string; name: string; status: string; is_prioritized: boolean; category_id: string; template_id: string | null; created_at: string; categories: { name: string } | null; templates: { name: string } | null }
 type Lead = { id: string; workbook_id: string; row_number: number; source_values: Record<string, string | number | boolean | null> }
 type Field = { id: string; field_key: string; label: string; field_kind: 'source' | 'user'; owner_role_code: string | null; owner_profile_id: string | null; input_type: string; options: string[]; is_required: boolean; sort_order: number }
 type Person = { id: string; full_name: string; email: string; role_code: string; is_active: boolean }
@@ -19,10 +19,13 @@ type Step = { role_code: string; step_order: number }
 type DetailData = { workbook: Workbook; leads: Lead[]; fields: Field[]; people: Person[]; assignments: Assignment[]; roles: Array<{ role_code: string; label: string }>; steps: Step[] }
 const supabase = createClient()
 
-async function loadFields(templateId: string) {
-  const full = await supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
+async function loadFields(workbookId: string, templateId: string | null) {
+  const filters = [`workbook_id.eq.${workbookId}`, 'and(workbook_id.is.null,template_id.is.null)']
+  if (templateId) filters.push(`and(workbook_id.is.null,template_id.eq.${templateId})`)
+  const orFilter = filters.join(',')
+  const full = await supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id,template_id').or(orFilter).order('sort_order')
   if (!full.error) return full
-  return supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,input_type,options,is_required,sort_order').or(`template_id.eq.${templateId},template_id.is.null`).order('sort_order')
+  return supabase.from('template_fields').select('id,field_key,label,field_kind,owner_role_code,owner_profile_id,input_type,options,is_required,sort_order,workbook_id,template_id').or(orFilter).order('sort_order')
 }
 
 async function loadWorkbook(id: string): Promise<DetailData> {
@@ -30,7 +33,7 @@ async function loadWorkbook(id: string): Promise<DetailData> {
   if (workbookError || !workbook) throw new Error('Workbook could not be loaded.')
   const [leadResult, fieldResult, peopleResult, roleResult, stepResult] = await Promise.all([
     supabase.from('lead_records').select('id,workbook_id,row_number,source_values').eq('workbook_id', id).order('row_number').range(0, 4999),
-    loadFields(workbook.template_id),
+    loadFields(id, workbook.template_id ?? null),
     supabase.from('profiles').select('id,full_name,email,role_code,is_active').order('full_name'),
     supabase.from('role_definitions').select('role_code,label'),
     supabase.from('workbook_reporting_steps').select('role_code,step_order').eq('workbook_id', id).order('step_order'),
