@@ -28,11 +28,21 @@ export function WorksheetGrid<S extends SourceFieldLike, U extends UserFieldLike
   renderSourceCell?: (lead: L | undefined, field: S, value: string, rowNumber: number) => ReactNode
   renderUserCell: (lead: L | undefined, field: U, rowNumber: number) => ReactNode
 }) {
-  const headerCount = Math.min(sheetCells.length, Math.max(0, dataStartRow - 1))
-  const dataIndices: number[] = []
-  for (let index = headerCount; index < sheetCells.length; index++) {
-    if (!visibleRowNumbers || visibleRowNumbers.has(index + 1)) dataIndices.push(index)
-  }
+  const hasGrid = sheetCells.length > 0
+  const headerCount = hasGrid ? Math.min(sheetCells.length, Math.max(0, dataStartRow - 1)) : 0
+  // Workbooks imported before the exact-grid storage change have no sheetCells.
+  // Their data rows still exist in lead_records, so render from the leads
+  // instead of silently showing only the legacy header row.
+  const dataRowsToRender: Array<{ sheetIndex: number | null; rowNumber: number }> = hasGrid
+    ? Array.from({ length: sheetCells.length - headerCount }, (_, offset) => headerCount + offset)
+      .filter((sheetIndex) => !visibleRowNumbers || visibleRowNumbers.has(sheetIndex + 1))
+      .map((sheetIndex) => ({ sheetIndex, rowNumber: sheetIndex + 1 }))
+    : [...leads].sort((a, b) => a.row_number - b.row_number)
+      .filter((lead) => !visibleRowNumbers || visibleRowNumbers.has(lead.row_number))
+      .map((lead) => ({ sheetIndex: null, rowNumber: lead.row_number }))
+  const dataIndices = dataRowsToRender
+    .map((row) => row.sheetIndex)
+    .filter((sheetIndex): sheetIndex is number => sheetIndex !== null)
   const headerIndices = headerCount > 0 ? Array.from({ length: headerCount }, (_, index) => index) : []
   const rowPosition = new Map<number, number>()
   ;[...headerIndices, ...dataIndices].forEach((sheetIndex, position) => rowPosition.set(sheetIndex, position))
@@ -81,16 +91,17 @@ export function WorksheetGrid<S extends SourceFieldLike, U extends UserFieldLike
       {userFields.map((field) => <th key={`legacy-user-${field.id}`}>{field.label}</th>)}
       {trailing.map((column, index) => <th key={`legacy-trailing-${index}`}>{column.header}</th>)}
     </tr>}
-    {dataIndices.map((sheetIndex) => {
-      const rowNumber = sheetIndex + 1
+    {dataRowsToRender.map(({ sheetIndex, rowNumber }) => {
       const lead = leadByRow.get(rowNumber)
       return <tr key={`data-${rowNumber}`}>
         <td>{leadingForRow(lead, rowNumber)}</td>
         {sourceFields.map((field, fieldIndex) => {
           const column = field.column_index ?? fieldIndex
-          const span = spanFor(sheetIndex, column)
+          const span = sheetIndex === null
+            ? { skip: false, rowSpan: 1, colSpan: 1 }
+            : spanFor(sheetIndex, column)
           if (span.skip) return null
-          const sheetValue = sheetCells[sheetIndex]?.[column] ?? ''
+          const sheetValue = sheetIndex === null ? '' : sheetCells[sheetIndex]?.[column] ?? ''
           const value = lead ? String(lead.source_values[field.field_key] ?? sheetValue ?? '') : sheetValue
           return <td key={`cell-${rowNumber}-${field.id}`} rowSpan={span.rowSpan} colSpan={span.colSpan}>
             {renderSourceCell ? renderSourceCell(lead, field, value, rowNumber) : value}
