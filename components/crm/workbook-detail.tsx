@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
-import { ArrowLeft, Bell, Check, ChevronDown, Download, Flag, GitBranch, LoaderCircle, Mail, Save, Send, UserRoundPlus } from 'lucide-react'
+import { ArrowLeft, Bell, Check, ChevronDown, Download, Flag, GitBranch, LoaderCircle, Mail, Save, Send, Trash2, UserRoundPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ReportingFlowEditor } from '@/components/crm/reporting-flow-editor'
 import { WorksheetGrid } from '@/components/crm/worksheet-grid'
@@ -170,6 +170,16 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     else { setNotice(workbook.is_prioritized ? 'Priority removed.' : 'Workbook prioritized.'); await mutate() }
   }
 
+  async function deleteWorkbook() {
+    if (!workbook || !window.confirm(`Delete “${workbook.name}” and all ${data.leads.length} records? This cannot be undone.`)) return
+    setPending(true); setFormError(''); setNotice('')
+    const response = await fetch(`/api/workbooks/${workbook.id}`, { method: 'DELETE' })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) { setFormError(result.error ?? 'The workbook could not be deleted.'); setPending(false); return }
+    router.push('/admin/workbooks')
+    router.refresh()
+  }
+
   async function saveFlow() {
     if (!workbook) return
     setPending(true); setFormError(''); setNotice('')
@@ -260,7 +270,7 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
   }
 
   return <>
-    <div className="page-heading"><div><Link className="quiet-button" href="/admin/workbooks" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">{workbook.categories?.name ?? 'Workbook'} · {data.leads.length} leads</div><h1>{workbook.name}</h1><p>{workbook.templates?.name ?? 'Template'} · Created {new Date(workbook.created_at).toLocaleDateString()}</p></div><div className="toolbar-actions"><button className="primary-button" onClick={() => notifyAssignees()} disabled={notifyPending || !data?.leads.length}>{notifyPending ? <LoaderCircle className="animate-spin" /> : <Bell />} Notify all assignees</button><button className="secondary-button" onClick={togglePriority}><Flag />{workbook.is_prioritized ? 'Prioritized' : 'Prioritize'}</button><button className="secondary-button" onClick={downloadWorkbook}><Download /> Download Excel</button></div></div>
+    <div className="page-heading"><div><Link className="quiet-button" href="/admin/workbooks" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">{workbook.categories?.name ?? 'Workbook'} · {data.leads.length} leads</div><h1>{workbook.name}</h1><p>{workbook.templates?.name ?? 'Template'} · Created {new Date(workbook.created_at).toLocaleDateString()}</p></div><div className="toolbar-actions"><button className="primary-button" onClick={() => notifyAssignees()} disabled={notifyPending || !data?.leads.length}>{notifyPending ? <LoaderCircle className="animate-spin" /> : <Bell />} Notify all assignees</button><button className="secondary-button" onClick={togglePriority}><Flag />{workbook.is_prioritized ? 'Prioritized' : 'Prioritize'}</button><button className="secondary-button" onClick={downloadWorkbook}><Download /> Download Excel</button><button className="danger-button" onClick={() => void deleteWorkbook()} disabled={pending} aria-label={`Delete ${workbook.name}`}><Trash2 /> Delete</button></div></div>
     {(notice || formError) && <div className="notice" data-tone={formError ? 'error' : undefined} role={formError ? 'alert' : 'status'}>{formError || notice}</div>}
     <section className="card card-pad">
       <div className="section-head" style={{ padding: '0 0 14px' }}><div><h2>Workbook settings</h2><p>Update the name and lifecycle status.</p></div><span className="status-pill" data-tone={workbook.status === 'closed' ? 'neutral' : workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{workbook.status}</span></div>

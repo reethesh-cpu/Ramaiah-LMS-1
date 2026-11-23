@@ -4,7 +4,7 @@ import { TransitionLink as Link } from '@/components/crm/route-transition'
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
-import { ArrowRight, Download, FileSpreadsheet, Flag, LoaderCircle, Plus, Search } from 'lucide-react'
+import { ArrowRight, Download, FileSpreadsheet, Flag, LoaderCircle, Plus, Search, Trash2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 type WorkbookRow = { id: string; name: string; status: string; is_prioritized: boolean; created_at: string; categories: { name: string } | null; templates: { name: string } | null; lead_records: Array<{ count: number }> }
@@ -21,12 +21,23 @@ export default function WorkbooksPage() {
   const [status, setStatus] = useState('all')
   const [search, setSearch] = useState('')
   const [message, setMessage] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState('')
   const filtered = useMemo(() => (workbooks ?? []).filter((workbook) => (status === 'all' || workbook.status === status) && workbook.name.toLowerCase().includes(search.toLowerCase())), [workbooks, status, search])
 
   async function togglePriority(workbook: WorkbookRow) {
     const response = await fetch(`/api/workbooks/${workbook.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_prioritized: !workbook.is_prioritized }) })
     if (!response.ok) setMessage('Priority could not be updated.')
     else { setMessage('Priority updated.'); await mutate() }
+  }
+
+  async function deleteWorkbook(workbook: WorkbookRow) {
+    setDeletingId(workbook.id); setMessage('')
+    const response = await fetch(`/api/workbooks/${workbook.id}`, { method: 'DELETE' })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) setMessage(result.error ?? 'The workbook could not be deleted.')
+    else { setMessage(`“${result.name ?? workbook.name}” and its records were deleted.`); setConfirmDeleteId(null); await mutate() }
+    setDeletingId('')
   }
 
   function downloadSummary() {
@@ -41,7 +52,7 @@ export default function WorkbooksPage() {
     {message && <div className="notice" role="status">{message}</div>}
     <section className="card section-card" style={{ marginTop: 0 }}>
       <div className="toolbar-row"><div className="toolbar-actions"><div style={{ position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 11, top: 10, color: '#8a8083' }} /><input className="toolbar-search" style={{ paddingLeft: 34 }} aria-label="Search workbooks" placeholder="Search workbooks" value={search} onChange={(event) => setSearch(event.target.value)} /></div><div className="segmented" aria-label="Filter workbook status">{['all', 'active', 'ongoing', 'closed'].map((item) => <button key={item} type="button" data-active={status === item} onClick={() => setStatus(item)}>{item === 'all' ? 'All' : item[0].toUpperCase() + item.slice(1)}</button>)}</div></div><button className="secondary-button" onClick={downloadSummary} disabled={!filtered.length}><Download /> Export list</button></div>
-      {isLoading ? <div className="empty-state"><LoaderCircle className="animate-spin" /></div> : error ? <div className="empty-state"><h3>Could not load workbooks</h3><p>Check your Supabase connection and refresh the page.</p></div> : !filtered.length ? <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>{workbooks?.length ? 'No matching workbooks' : 'No workbooks yet'}</h3><p>{workbooks?.length ? 'Try another search or status filter.' : 'Create a workbook from a reusable template to add real lead data.'}</p>{!workbooks?.length && <Link className="secondary-button" style={{ marginTop: 14 }} href="/admin/workbooks/new"><Plus /> Create a workbook</Link>}</div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Workbook</th><th>Category</th><th>Template</th><th>Records</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>{filtered.map((workbook) => <tr key={workbook.id}><td><Link href={`/admin/workbooks/${workbook.id}`} style={{ color: '#231f20', fontWeight: 650 }}>{workbook.name}</Link></td><td>{workbook.categories?.name ?? '—'}</td><td>{workbook.templates?.name ?? '—'}</td><td>{workbook.lead_records?.[0]?.count ?? 0}</td><td><span className="status-pill" data-tone={workbook.status === 'closed' ? 'neutral' : workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{workbook.status}</span></td><td>{new Date(workbook.created_at).toLocaleDateString()}</td><td><div style={{ display: 'flex', gap: 3 }}><Link className="quiet-button" href={`/admin/workbooks/${workbook.id}`}>Open <ArrowRight /></Link><button className="quiet-button" aria-label={`${workbook.is_prioritized ? 'Remove priority from' : 'Prioritize'} ${workbook.name}`} onClick={() => togglePriority(workbook)}><Flag />{workbook.is_prioritized ? 'Prioritized' : 'Priority'}</button></div></td></tr>)}</tbody></table></div>}
+      {isLoading ? <div className="empty-state"><LoaderCircle className="animate-spin" /></div> : error ? <div className="empty-state"><h3>Could not load workbooks</h3><p>Check your Supabase connection and refresh the page.</p></div> : !filtered.length ? <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>{workbooks?.length ? 'No matching workbooks' : 'No workbooks yet'}</h3><p>{workbooks?.length ? 'Try another search or status filter.' : 'Create a workbook from a reusable template to add real lead data.'}</p>{!workbooks?.length && <Link className="secondary-button" style={{ marginTop: 14 }} href="/admin/workbooks/new"><Plus /> Create a workbook</Link>}</div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Workbook</th><th>Category</th><th>Template</th><th>Records</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>{filtered.map((workbook) => <tr key={workbook.id}><td><Link href={`/admin/workbooks/${workbook.id}`} style={{ color: '#231f20', fontWeight: 650 }}>{workbook.name}</Link></td><td>{workbook.categories?.name ?? '—'}</td><td>{workbook.templates?.name ?? '—'}</td><td>{workbook.lead_records?.[0]?.count ?? 0}</td><td><span className="status-pill" data-tone={workbook.status === 'closed' ? 'neutral' : workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{workbook.status}</span></td><td>{new Date(workbook.created_at).toLocaleDateString()}</td><td><div style={{ display: 'flex', gap: 3 }}><Link className="quiet-button" href={`/admin/workbooks/${workbook.id}`}>Open <ArrowRight /></Link><button className="quiet-button" aria-label={`${workbook.is_prioritized ? 'Remove priority from' : 'Prioritize'} ${workbook.name}`} onClick={() => togglePriority(workbook)}><Flag />{workbook.is_prioritized ? 'Prioritized' : 'Priority'}</button>{confirmDeleteId === workbook.id ? <><button className="danger-button" disabled={deletingId === workbook.id} aria-label={`Confirm delete ${workbook.name}`} onClick={() => void deleteWorkbook(workbook)}>{deletingId === workbook.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />} Confirm</button><button className="quiet-button" aria-label={`Cancel delete ${workbook.name}`} onClick={() => setConfirmDeleteId(null)}><X /> Cancel</button></> : <button className="quiet-button" aria-label={`Delete ${workbook.name}`} onClick={() => { setMessage(''); setConfirmDeleteId(workbook.id) }}><Trash2 /> Delete</button>}</div></td></tr>)}</tbody></table></div>}
     </section>
   </>
 }
