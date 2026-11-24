@@ -57,6 +57,7 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
   const [editName, setEditName] = useState('')
   const [editStatus, setEditStatus] = useState('')
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [userDrafts, setUserDrafts] = useState<Record<string, string>>({})
   const [flowRoleCodes, setFlowRoleCodes] = useState<string[]>([])
   const [pending, setPending] = useState(false)
   const [notifyPending, setNotifyPending] = useState(false)
@@ -214,6 +215,19 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     else { setNotice(`${field.label} updated.`); await mutate() }
   }
 
+  async function saveUserValue(lead: Lead, field: Field, assignmentId: string | undefined, value: string) {
+    setPending(true); setFormError(''); setNotice('')
+    const response = await fetch('/api/assignment-field-values', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_id: lead.id, ...(assignmentId ? { assignment_id: assignmentId } : {}), field_id: field.id, value }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) setFormError(result.error ?? `Could not update ${field.label}.`)
+    else { setNotice(`${field.label} updated for ${ownerLabelFor(field)}.`); await mutate() }
+    setPending(false)
+  }
+
   async function assignSelected() {
     if (!data || !assigneeIds.length) return
     const leadIds = selectedLeadIds.length ? selectedLeadIds : data.leads.map((lead) => lead.id)
@@ -269,6 +283,28 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
     </>
   }
 
+  function renderWorkbookUserCell(lead: Lead | undefined, field: Field, rowNumber: number) {
+    if (!lead) return '—'
+    const assignments = assignmentsByLead.get(lead.id) ?? []
+    const ownerAssignment = field.owner_profile_id
+      ? assignments.find((item) => item.assigned_to === field.owner_profile_id)
+      : [...assignments].find((item) => item.role_code === field.owner_role_code && item.assignment_field_values?.some((value) => value.field_id === field.id))
+        ?? assignments.find((item) => item.role_code === field.owner_role_code)
+    const savedValue = ownerAssignment?.assignment_field_values.find((item) => item.field_id === field.id)?.value
+    const draftKey = `${lead.id}:${field.id}`
+    const value = userDrafts[draftKey] ?? (savedValue == null || savedValue === '' ? '' : String(savedValue))
+    const commonProps = {
+      'aria-label': `Row ${rowNumber} ${ownerLabelFor(field)} ${field.label}`,
+      value,
+      disabled: pending,
+      onChange: (event: { target: { value: string } }) => setUserDrafts((current) => ({ ...current, [draftKey]: event.target.value })),
+      onBlur: (event: { target: { value: string } }) => void saveUserValue(lead, field, ownerAssignment?.id, event.target.value),
+    }
+    if (field.input_type === 'dropdown') return <select {...commonProps} style={{ minWidth: 145, fontSize: 12 }}><option value="">Select…</option>{field.options.map((option) => <option value={option} key={option}>{option}</option>)}</select>
+    if (field.input_type === 'textarea') return <textarea {...commonProps} rows={2} style={{ minWidth: 145, fontSize: 12 }} />
+    return <input {...commonProps} type={field.input_type === 'date' || field.input_type === 'number' ? field.input_type : 'text'} style={{ minWidth: 145, fontSize: 12 }} />
+  }
+
   return <>
     <div className="page-heading"><div><Link className="quiet-button" href="/admin/workbooks" style={{ marginBottom: 12, paddingLeft: 0 }}><ArrowLeft /> Back to workbooks</Link><div className="kicker">{workbook.categories?.name ?? 'Workbook'} · {data.leads.length} leads</div><h1>{workbook.name}</h1><p>{workbook.templates?.name ?? 'Template'} · Created {new Date(workbook.created_at).toLocaleDateString()}</p></div><div className="toolbar-actions"><button className="primary-button" onClick={() => notifyAssignees()} disabled={notifyPending || !data?.leads.length}>{notifyPending ? <LoaderCircle className="animate-spin" /> : <Bell />} Notify all assignees</button><button className="secondary-button" onClick={togglePriority}><Flag />{workbook.is_prioritized ? 'Prioritized' : 'Prioritize'}</button><button className="secondary-button" onClick={downloadWorkbook}><Download /> Download Excel</button><button className="danger-button" onClick={() => void deleteWorkbook()} disabled={pending} aria-label={`Delete ${workbook.name}`}><Trash2 /> Delete</button></div></div>
     {(notice || formError) && <div className="notice" data-tone={formError ? 'error' : undefined} role={formError ? 'alert' : 'status'}>{formError || notice}</div>}
@@ -288,8 +324,8 @@ export function WorkbookDetail({ workbookId }: { workbookId: string }) {
       {assignablePeople.length ? <div className="toolbar-row" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>{assignablePeople.map((person) => { const order = assigneeIds.indexOf(person.id); const selected = order >= 0; return <label key={person.id} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px', border: `1px solid ${selected ? '#e7a9b2' : 'var(--border)'}`, background: selected ? '#fffafb' : '#fff', borderRadius: 8, cursor: 'pointer' }}><input type="checkbox" checked={selected} onChange={() => toggleAssignee(person.id)} /><span style={{ width: 18, height: 18, borderRadius: '50%', display: 'grid', placeItems: 'center', background: selected ? '#c8102e' : '#f3eef0', color: selected ? '#fff' : '#8a8083', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{selected ? order + 1 : '·'}</span><span style={{ fontSize: 11, fontWeight: 600 }}>{person.full_name}</span><span className="form-hint">{roleLabels.get(person.role_code) ?? person.role_code}{flowStepByRole.has(person.role_code) ? ` · Level ${flowStepByRole.get(person.role_code)}` : ' · role will be added to flow'}</span></label>})}</div> : <div className="toolbar-row"><span className="form-hint">No active assignees available. Add users from People & access.</span></div>}
       {assigneeIds.length ? <div className="notice" style={{ margin: '12px 16px 16px' }}><Send /> <span><strong>Hand-off chain:</strong> {assigneeIds.map((id, index) => { const person = personById.get(id); const roleCode = person?.role_code ?? ''; return <span key={id}>{index > 0 ? ' → ' : ''}{person?.full_name ?? 'Team member'} ({roleLabels.get(roleCode) ?? roleCode} · {flowStepByRole.has(roleCode) ? `level ${flowStepByRole.get(roleCode)}` : 'level added on save'})</span> })}</span></div> : null}
     </section>
-    <section className="card section-card"><div className="section-head"><div><h2>Lead records</h2><p>Rows above the chosen data-start row are shown as red headings; that row onward is data. Imported source data stays read-only for assignees. Team columns appear only for people in this workbook's flow or assigned work here.</p></div><span className="status-pill">{data.leads.length.toLocaleString()} rows</span></div>
-      {!data.leads.length ? <div className="empty-state"><h3>This workbook has no records</h3><p>Upload a CSV or Excel file to populate the workbook.</p></div> : <div className="table-wrap"><table className="data-table"><tbody><WorksheetGrid sheetCells={workbook.sheet_cells ?? []} sheetMerges={workbook.sheet_merges ?? []} dataStartRow={workbook.sheet_cells?.length ? (workbook.data_start_row ?? 1) : 1} columnCount={workbook.column_count ?? workbook.sheet_cells?.[0]?.length ?? 0} sourceFields={sourceFields} userFields={userFields} leads={data.leads} leadingHeader={<input type="checkbox" aria-label="Select all leads" checked={allSelected} onChange={() => setSelectedLeadIds(allSelected ? [] : data.leads.map((lead) => lead.id))} />} leadingForRow={(lead, rowNumber) => <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" aria-label={`Select lead row ${rowNumber}`} checked={Boolean(lead && selectedLeadIds.includes(lead.id))} onChange={() => { if (lead) toggleLead(lead.id) }} /><strong>{rowNumber}</strong></span>} trailingHeader="Assigned team" trailingForRow={renderAssignedTeam} renderSourceCell={(lead, field, value, rowNumber) => lead ? <input aria-label={`Row ${rowNumber} ${field.label}`} value={drafts[`${lead.id}:${field.field_key}`] ?? value} type={field.input_type === 'date' ? 'date' : field.input_type === 'number' ? 'number' : 'text'} onChange={(event) => setDrafts((current) => ({ ...current, [`${lead.id}:${field.field_key}`]: event.target.value }))} onBlur={() => void saveSourceValue(lead, field)} style={{ minWidth: 70, fontSize: 12 }} /> : value} renderUserCell={(lead, field) => { if (!lead) return '—'; const assignments = assignmentsByLead.get(lead.id) ?? []; const ownerAssignment = field.owner_profile_id ? assignments.find((item) => item.assigned_to === field.owner_profile_id) : [...assignments].find((item) => item.role_code === field.owner_role_code && item.assignment_field_values?.some((value) => value.field_id === field.id)) ?? assignments.find((item) => item.role_code === field.owner_role_code); const value = ownerAssignment?.assignment_field_values.find((item) => item.field_id === field.id)?.value; return value == null || value === '' ? '—' : String(value) }} /></tbody></table></div>}
+    <section className="card section-card"><div className="section-head"><div><h2>Lead records</h2><p>Rows above the chosen data-start row are shown as red headings; that row onward is data. Head office can edit both source and user columns here; imported source data stays read-only for assignees. Editing a user column saves it against its owner and assigns that person to the row if needed.</p></div><span className="status-pill">{data.leads.length.toLocaleString()} rows</span></div>
+      {!data.leads.length ? <div className="empty-state"><h3>This workbook has no records</h3><p>Upload a CSV or Excel file to populate the workbook.</p></div> : <div className="table-wrap"><table className="data-table"><tbody><WorksheetGrid sheetCells={workbook.sheet_cells ?? []} sheetMerges={workbook.sheet_merges ?? []} dataStartRow={workbook.sheet_cells?.length ? (workbook.data_start_row ?? 1) : 1} columnCount={workbook.column_count ?? workbook.sheet_cells?.[0]?.length ?? 0} sourceFields={sourceFields} userFields={userFields} leads={data.leads} leadingHeader={<input type="checkbox" aria-label="Select all leads" checked={allSelected} onChange={() => setSelectedLeadIds(allSelected ? [] : data.leads.map((lead) => lead.id))} />} leadingForRow={(lead, rowNumber) => <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" aria-label={`Select lead row ${rowNumber}`} checked={Boolean(lead && selectedLeadIds.includes(lead.id))} onChange={() => { if (lead) toggleLead(lead.id) }} /><strong>{rowNumber}</strong></span>} trailingHeader="Assigned team" trailingForRow={renderAssignedTeam} renderSourceCell={(lead, field, value, rowNumber) => lead ? <input aria-label={`Row ${rowNumber} ${field.label}`} value={drafts[`${lead.id}:${field.field_key}`] ?? value} type={field.input_type === 'date' ? 'date' : field.input_type === 'number' ? 'number' : 'text'} onChange={(event) => setDrafts((current) => ({ ...current, [`${lead.id}:${field.field_key}`]: event.target.value }))} onBlur={() => void saveSourceValue(lead, field)} style={{ minWidth: 70, fontSize: 12 }} /> : value} renderUserCell={renderWorkbookUserCell} /></tbody></table></div>}
     </section>
     {data.assignments.some((assignment) => assignment.assignment_field_values?.length) && <section className="card section-card"><div className="section-head"><div><h2>Team updates</h2><p>Role-specific values are visible according to the reporting hierarchy.</p></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Lead row</th><th>Team member</th><th>Role</th><th>Flow level</th><th>Status</th><th>Submitted fields</th><th>Last update</th></tr></thead><tbody>{data.assignments.filter((assignment) => assignment.assignment_field_values?.length).map((assignment) => <tr key={assignment.id}><td>{data.leads.find((lead) => lead.id === assignment.lead_id)?.row_number ?? '—'}</td><td>{personById.get(assignment.assigned_to)?.full_name ?? 'Team member'}</td><td>{roleLabels.get(assignment.role_code) ?? assignment.role_code}</td><td>{levelLabelFor(assignment.role_code)}</td><td>{assignment.status}</td><td>{assignment.assignment_field_values.map((value) => { const field = data.fields.find((item) => item.id === value.field_id); return field ? `${ownerLabelFor(field)} · ${field.label}: ${String(value.value ?? '')}` : '' }).filter(Boolean).join(' · ')}</td><td>{new Date(assignment.assignment_field_values[0].updated_at).toLocaleString()}</td></tr>)}</tbody></table></div></section>}
     <div className="notice"><Check /> Assignment notifications are recorded in the Supabase outbox. Google Mail API delivery will begin once its sender credential is connected; no third-party mail sender is used.</div>

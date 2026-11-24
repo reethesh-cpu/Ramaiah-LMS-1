@@ -106,9 +106,14 @@ export default function WorkspaceWorkbookPage() {
 
   async function saveField(assignment: Assignment, field: Field, value: string) {
     const key = `${assignment.id}:${field.id}`
-    setBusy(key); setFormError('')
-    const { error: saveError } = await supabase.from('assignment_field_values').upsert({ assignment_id: assignment.id, field_id: field.id, value: value === '' ? null : value, updated_by: data?.userId }, { onConflict: 'assignment_id,field_id' })
-    if (saveError) setFormError('This field could not be saved. Only the assigned user can edit their own columns.')
+    setBusy(key); setFormError(''); setNotice('')
+    const response = await fetch('/api/assignment-field-values', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_id: assignment.lead_id, assignment_id: assignment.id, field_id: field.id, value }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) setFormError(result.error ?? 'This field could not be saved. Only the assigned user can edit their own columns.')
     else { setNotice('Update saved. Changes are visible to the reporting levels above you in this workbook.'); await mutate() }
     setBusy('')
   }
