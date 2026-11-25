@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getHeadOfficeActor } from '@/lib/crm/server-auth'
+import { normalizeWorkbookStatus } from '@/lib/crm/workbook-status'
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await getHeadOfficeActor()
@@ -14,8 +15,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     updates.name = name
   }
   if (body?.status !== undefined) {
-    if (!['active', 'ongoing', 'closed'].includes(body.status)) return NextResponse.json({ error: 'Choose a valid status.' }, { status: 400 })
-    updates.status = body.status
+    const status = normalizeWorkbookStatus(body.status)
+    if (!status) return NextResponse.json({ error: 'Choose a valid status.' }, { status: 400 })
+    updates.status = status
   }
   if (body?.is_prioritized !== undefined) updates.is_prioritized = body.is_prioritized
   if (!Object.keys(updates).length) return NextResponse.json({ error: 'No supported change was provided.' }, { status: 400 })

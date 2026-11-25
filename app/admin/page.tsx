@@ -1,6 +1,7 @@
 import { TransitionLink as Link } from '@/components/crm/route-transition'
-import { ArrowRight, BriefcaseBusiness, CircleCheck, FileSpreadsheet, UsersRound } from 'lucide-react'
+import { ArrowRight, BriefcaseBusiness, CircleCheck, FileSpreadsheet, Flag, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { workbookStatusLabel, workbookStatusTone } from '@/lib/crm/workbook-status'
 
 function StatCard({ label, value, detail, icon: Icon }: { label: string; value: number; detail: string; icon: React.ComponentType<{ size?: number }> }) {
   return <article className="card stat-card"><div className="stat-top"><span>{label}</span><span className="stat-icon"><Icon size={16} /></span></div><div className="stat-value">{value.toLocaleString()}</div><div className="form-hint">{detail}</div></article>
@@ -27,7 +28,7 @@ export default async function AdminOverviewPage() {
     </section>
     <section className="card section-card">
       <div className="section-head"><div><h2>Recently created workbooks</h2><p>Newly uploaded lead work, ready for your team.</p></div><Link className="quiet-button" href="/admin/workbooks">View all <ArrowRight /></Link></div>
-      {rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Workbook</th><th>Category</th><th>Template</th><th>Leads</th><th>Status</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><Link href={`/admin/workbooks/${row.id}`} style={{ fontWeight: 650, color: '#231f20' }}>{row.name}</Link>{row.is_prioritized ? <span style={{ marginLeft: 8, color: '#a3231a' }}>Priority</span> : null}</td><td>{row.categories?.name ?? '—'}</td><td>{row.templates?.name ?? '—'}</td><td>{row.lead_records?.[0]?.count ?? 0}</td><td><span className="status-pill" data-tone={row.status === 'closed' ? 'neutral' : undefined}><span className="status-dot" />{row.status}</span></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>No workbooks yet</h3><p>Create a workbook from a template and upload your first lead file. Your real Supabase data will appear here.</p><Link className="secondary-button" href="/admin/workbooks/new" style={{ marginTop: 15 }}>Create a workbook <ArrowRight /></Link></div>}
+      {rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Workbook</th><th>Category</th><th>Template</th><th>Leads</th><th>Status</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><Link href={`/admin/workbooks/${row.id}`} style={{ fontWeight: 650, color: '#231f20' }}>{row.name}</Link>{row.is_prioritized ? <span className="priority-badge"><Flag size={11} /> Priority</span> : null}</td><td>{row.categories?.name ?? '—'}</td><td>{row.templates?.name ?? '—'}</td><td>{row.lead_records?.[0]?.count ?? 0}</td><td><span className="status-pill" data-tone={workbookStatusTone(row.status)}><span className="status-dot" />{workbookStatusLabel(row.status)}</span></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>No workbooks yet</h3><p>Create a workbook from a template and upload your first lead file. Your real Supabase data will appear here.</p><Link className="secondary-button" href="/admin/workbooks/new" style={{ marginTop: 15 }}>Create a workbook <ArrowRight /></Link></div>}
     </section>
   </>
 }

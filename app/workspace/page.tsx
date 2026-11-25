@@ -3,10 +3,11 @@
 import { TransitionLink as Link } from '@/components/crm/route-transition'
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { ArrowRight, Check, FileSpreadsheet, FolderKanban, LoaderCircle, Search, Send, UsersRound } from 'lucide-react'
+import { ArrowRight, Check, FileSpreadsheet, Flag, FolderKanban, LoaderCircle, Search, Send, UsersRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { workbookStatusLabel, workbookStatusTone } from '@/lib/crm/workbook-status'
 
-type WorkbookRef = { id: string; name: string; status: string; template_id: string }
+type WorkbookRef = { id: string; name: string; status: string; is_prioritized: boolean; created_at: string; template_id: string }
 type Assignment = { id: string; lead_id: string; assigned_to: string; role_code: string; status: 'assigned' | 'completed'; lead_records: { id: string; workbook_id: string; workbooks: WorkbookRef } }
 type Person = { id: string; full_name: string; role_code: string }
 type ListData = { userId: string; profile: Person; roles: Array<{ role_code: string; label: string }>; templates: Array<{ id: string; name: string }>; assignments: Assignment[] }
@@ -19,7 +20,7 @@ async function loadList(): Promise<ListData> {
     supabase.from('profiles').select('id,full_name,role_code').eq('id', user.id).single(),
     supabase.from('role_definitions').select('role_code,label'),
     supabase.from('templates').select('id,name'),
-    supabase.from('lead_assignments').select('id,lead_id,assigned_to,role_code,status,lead_records!inner(id,workbook_id,workbooks!inner(id,name,status,template_id))').order('assigned_at', { ascending: false }).range(0, 19999),
+    supabase.from('lead_assignments').select('id,lead_id,assigned_to,role_code,status,lead_records!inner(id,workbook_id,workbooks!inner(id,name,status,is_prioritized,created_at,template_id))').order('assigned_at', { ascending: false }).range(0, 19999),
   ])
   if (profileResult.error || !profileResult.data || rolesResult.error || templatesResult.error || assignmentResult.error) throw new Error('Your workbooks could not be loaded.')
   return {
@@ -57,7 +58,11 @@ export default function WorkspacePage() {
         else group.myCompleted += 1
       }
     }
-    return [...map.values()].sort((a, b) => a.workbook.name.localeCompare(b.workbook.name))
+    return [...map.values()].sort((a, b) =>
+      Number(b.workbook.is_prioritized) - Number(a.workbook.is_prioritized)
+      || Date.parse(b.workbook.created_at) - Date.parse(a.workbook.created_at)
+      || a.workbook.name.localeCompare(b.workbook.name),
+    )
   }, [data?.assignments, data?.userId])
 
   const visibleGroups = workbookGroups.filter((group) => `${group.workbook.name} ${templateNames.get(group.workbook.template_id) ?? ''}`.toLowerCase().includes(search.toLowerCase()))
@@ -73,7 +78,7 @@ export default function WorkspacePage() {
     <section className="stat-grid stat-grid-compact"><article className="card stat-card"><div className="stat-top">Workbooks<span className="stat-icon"><FolderKanban /></span></div><div className="stat-value">{workbookGroups.length}</div><div className="form-hint">Assigned to you or your team</div></article><article className="card stat-card"><div className="stat-top">Visible leads<span className="stat-icon"><UsersRound /></span></div><div className="stat-value">{totalLeads}</div><div className="form-hint">Across all your workbooks</div></article><article className="card stat-card"><div className="stat-top">My open work<span className="stat-icon"><Send /></span></div><div className="stat-value">{myOpen}</div><div className="form-hint">Assigned directly to you</div></article><article className="card stat-card"><div className="stat-top">My completed<span className="stat-icon"><Check /></span></div><div className="stat-value">{myCompleted}</div><div className="form-hint">Submitted by you</div></article></section>
     <section className="card section-card" style={{ marginTop: 0 }}>
       <div className="toolbar-row"><div><h2 style={{ margin: 0 }}>Assigned workbooks</h2><span className="form-hint">Each workbook keeps its own columns, so templates never mix.</span></div><div style={{ position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 11, top: 10, color: '#8a8083' }} /><input className="toolbar-search" style={{ paddingLeft: 34 }} aria-label="Search workbooks" placeholder="Search workbooks" value={search} onChange={(event) => setSearch(event.target.value)} /></div></div>
-      {!workbookGroups.length ? <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>No workbooks assigned yet</h3><p>When you are assigned leads, or your role is in a workbook's reporting flow, it will appear here with an Open button.</p></div> : !visibleGroups.length ? <div className="empty-state"><h3>No matching workbooks</h3><p>Try a different search term.</p></div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Workbook</th><th>Status</th><th>Visible leads</th><th>My open</th><th>My completed</th><th>Team</th><th>Action</th></tr></thead><tbody>{visibleGroups.map((group) => <tr key={group.workbook.id}><td><strong style={{ display: 'block', minWidth: 180 }}>{group.workbook.name}</strong><span className="form-hint">{templateNames.get(group.workbook.template_id) ?? 'Workbook template'}</span></td><td><span className="status-pill" data-tone={group.workbook.status === 'closed' ? 'neutral' : group.workbook.status === 'ongoing' ? 'amber' : undefined}><span className="status-dot" />{group.workbook.status}</span></td><td>{group.leadIds.size}</td><td>{group.myOpen}</td><td>{group.myCompleted}</td><td style={{ whiteSpace: 'normal', maxWidth: 220 }}>{[...group.roles].map((role) => roleLabels.get(role) ?? role).join(', ')}<span className="form-hint" style={{ display: 'block' }}>{group.team.size} {group.team.size === 1 ? 'person' : 'people'}</span></td><td><Link className="primary-button" href={`/workspace/${group.workbook.id}`}><ArrowRight /> Open</Link></td></tr>)}</tbody></table></div>}
+      {!workbookGroups.length ? <div className="empty-state"><span className="empty-icon"><FileSpreadsheet /></span><h3>No workbooks assigned yet</h3><p>When you are assigned leads, or your role is in a workbook's reporting flow, it will appear here with an Open button.</p></div> : !visibleGroups.length ? <div className="empty-state"><h3>No matching workbooks</h3><p>Try a different search term.</p></div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Workbook</th><th>Status</th><th>Visible leads</th><th>My open</th><th>My completed</th><th>Team</th><th>Action</th></tr></thead><tbody>{visibleGroups.map((group) => <tr key={group.workbook.id} className={group.workbook.is_prioritized ? 'prioritized-row' : undefined}><td><strong style={{ display: 'block', minWidth: 180 }}>{group.workbook.name}</strong>{group.workbook.is_prioritized ? <span className="priority-badge"><Flag size={11} /> Priority</span> : null}<span className="form-hint">{templateNames.get(group.workbook.template_id) ?? 'Workbook template'}</span></td><td><span className="status-pill" data-tone={workbookStatusTone(group.workbook.status)}><span className="status-dot" />{workbookStatusLabel(group.workbook.status)}</span></td><td>{group.leadIds.size}</td><td>{group.myOpen}</td><td>{group.myCompleted}</td><td style={{ whiteSpace: 'normal', maxWidth: 220 }}>{[...group.roles].map((role) => roleLabels.get(role) ?? role).join(', ')}<span className="form-hint" style={{ display: 'block' }}>{group.team.size} {group.team.size === 1 ? 'person' : 'people'}</span></td><td><Link className="primary-button" href={`/workspace/${group.workbook.id}`}><ArrowRight /> Open</Link></td></tr>)}</tbody></table></div>}
     </section>
     <div className="notice"><Check /> Work you update is visible to the reporting levels above you in each workbook's flow. Uploaded source data stays read-only.</div>
   </>
